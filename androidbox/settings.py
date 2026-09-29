@@ -1,25 +1,40 @@
 import json
 
-from . import paths
+from . import paths, profiles
 
-DEFAULTS = {
+LOCAL = {
     "selected": None,
-    "game_controls": True,
-    "show_hints": True,
-    "show_fps": False,
-    "sync_input": False,
     "check_updates": True,
     "skipped_version": "",
 }
 
+PROFILE = {
+    "game_controls": True,
+    "show_hints": True,
+    "show_fps": False,
+    "sync_input": False,
+}
+
+
+def profile_file():
+    return profiles.folder() / "settings.json"
+
+
+def read(path):
+    values = profiles.read_json(path, {})
+    return values if isinstance(values, dict) else {}
+
 
 def load():
-    try:
-        return {**DEFAULTS, **json.loads(paths.SETTINGS.read_text())}
-    except (OSError, ValueError):
-        return dict(DEFAULTS)
+    local, shared = read(paths.SETTINGS), read(profile_file())
+    return {**LOCAL, **PROFILE,
+            **{key: value for key, value in local.items() if key in LOCAL},
+            **{key: value for key, value in shared.items() if key in PROFILE}}
 
 
-def save(values):
-    paths.SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-    paths.SETTINGS.write_text(json.dumps(values, indent=2))
+def save(values, key):
+    if key in PROFILE:
+        profiles.write_json(profile_file(), {name: values[name] for name in PROFILE})
+    else:
+        paths.SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        paths.SETTINGS.write_text(json.dumps({name: values[name] for name in LOCAL}, indent=2))

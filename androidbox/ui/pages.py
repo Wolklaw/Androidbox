@@ -6,7 +6,8 @@ from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLineEdit, QMenu, QPlainTextEdit,
                                QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
-from .. import VERSION, installer, instances, keymap, macros
+from .. import VERSION, installer, instances, keymap, macros, profiles
+from .controller import plural
 from .phone import PhoneView
 from .theme import COLORS, ICONS
 from .tools import ToolRail
@@ -345,13 +346,13 @@ class MacrosPage(Page):
     def refresh(self, controller):
         self.clear()
         self.intro("Macros", "Record taps, swipes and key presses once, then replay them as often as you like. "
-                             "Handy for repetitive game tasks.")
+                             "Macros belong to your profile, so they follow it to every instance and PC.")
         if controller.recording_macro:
             record = button("Stop recording", self.host.toggle_macro, kind="danger")
         else:
             record = button("Record a macro", self.host.record_macro)
         self.add(row(record, None))
-        saved = macros.load(controller.instance)
+        saved = macros.load()
         if not saved:
             self.add(card(label("No macros yet. Record one, and it shows up here.", "Muted")))
             return
@@ -373,7 +374,9 @@ class MacrosPage(Page):
                 controller.update_macro(name, name=text)
 
         title.editingFinished.connect(rename)
-        stats = label(f"{macro['duration']:.1f} seconds · {len(macro['events'])} actions", "Small")
+        display = macro.get("display")
+        size = f" · {display[0]}×{display[1]}" if display else ""
+        stats = label(f"{macro['duration']:.1f} seconds · {len(macro['events'])} actions{size}", "Small")
         if controller.playing == name:
             actions = [button("Stop", controller.stop_macro, kind="danger")]
         else:
@@ -397,7 +400,7 @@ class MacrosPage(Page):
         self.host.show_page("screen")
 
     def delete(self, controller, name):
-        macros.delete(controller.instance, name)
+        macros.delete(name)
         controller.macros_changed.emit()
 
 
@@ -456,8 +459,12 @@ class SettingsPage(Page):
                       setting("Ad-free browser", "Installs Firefox and uBlock Origin, which blocks ads on every "
                                                  "website, YouTube included.", browser)))
 
+        preset = button("Save…", lambda: host.save_preset(controller), kind="secondary")
         backup = button("Back up", lambda: host.back_up(controller), kind="secondary")
-        self.add(card(label("Backup", "Section"),
+        self.add(card(label("Keep", "Section"),
+                      setting("Save as a preset", "Keeps this instance's processor, memory, display, frame rate and "
+                                                  "extras in your profile, so a new instance can start the same way "
+                                                  "on any PC that uses it.", preset), divider(),
                       setting("Back up this instance", "Saves its apps, data and settings to one file you can "
                                                        "restore from All instances.", backup)))
 
@@ -534,6 +541,79 @@ class InstancesPage(Page):
         for line in lines:
             line.layout().itemAt(0).widget().setFixedWidth(140)
         self.add(card(label("Keyboard shortcuts", "Section"), *lines, spacing=6))
+
+
+class ProfilePage(Page):
+    def __init__(self, host):
+        super().__init__(width=820)
+        self.host = host
+
+    def refresh(self):
+        self.clear()
+        host = self.host
+        self.intro("Profile", "A profile keeps your game controls, macros, presets and preferences together. "
+                              "Switch profiles to swap all of them at once, or sync one between PCs.")
+        self.add(row(button("New profile", host.new_profile),
+                     button("Import a profile", host.import_profile, kind="secondary"), None))
+        current = profiles.active()
+        rows = []
+        for name in profiles.names():
+            layouts, saved, presets = profiles.summary(name)
+            detail = f"{plural(layouts, 'game layout')}  ·  {plural(saved, 'macro')}  ·  {plural(presets, 'preset')}"
+            words = column(label(name, "Subheading"), label(detail, "Small"), spacing=2)
+            if name == current:
+                status = label("Active", "Small")
+                status.setStyleSheet(f"color: {COLORS['green']};")
+            else:
+                status = button("Switch", lambda n=name: host.switch_profile(n), kind="secondary")
+            more = menu_button([
+                ("Rename", lambda n=name: host.rename_profile(n)),
+                ("Duplicate", lambda n=name: host.duplicate_profile(n)),
+                ("Export", lambda n=name: host.export_profile(n)),
+                (None, None),
+                ("Delete", lambda n=name: host.delete_profile(n)),
+            ])
+            rows.append(row(avatar(instances.initials(name), COLORS["accent"] if name == current else COLORS["raised"]),
+                            words, None, status, more, spacing=10))
+        self.add(card(label(f"Your profiles · {len(rows)}", "Section"), *rows, spacing=12))
+        self.add(self.sync_card())
+        self.add(self.presets_card(current))
+
+    def sync_card(self):
+        host = self.host
+        folder = profiles.sync_folder()
+        intro = label("Pick a folder that OneDrive, Dropbox, Google Drive or Syncthing keeps up to date. Androidbox "
+                      "stores your profiles there, so every PC using the same folder shares them. Androidbox never "
+                      "uploads anything itself, and your instances and their apps stay on each PC.", "Muted", wrap=True)
+        if not folder:
+            return card(label("Sync between PCs", "Section"), intro,
+                        row(button("Choose a folder", host.choose_sync_folder, kind="secondary"), None))
+        lines = [label("Sync between PCs", "Section"), intro, pair("Folder", folder)]
+        if profiles.sync_missing():
+            warning = label("That folder isn't available right now, so Androidbox is using this PC's copy until it "
+                            "comes back.", "Small", wrap=True)
+            warning.setStyleSheet(f"color: {COLORS['yellow']};")
+            lines.append(warning)
+        lines.append(row(button("Change folder", host.choose_sync_folder, kind="secondary"),
+                         button("Stop syncing", host.stop_syncing, kind="secondary"), None))
+        return card(*lines)
+
+    def presets_card(self, current):
+        saved = profiles.presets()
+        lines = [label(f"Presets in {current}", "Section")]
+        if not saved:
+            lines.append(label("No presets yet. Open an instance's Settings and choose Save as a preset. They show "
+                               "up when you create a new instance.", "Muted", wrap=True))
+        for number, values in enumerate(saved):
+            if number:
+                lines.append(divider())
+            example = instances.from_dict(values, id="preset", slot=0)
+            words = column(label(values["name"], "Subheading"),
+                           label(f"{example.android}  ·  {example.resolution}  ·  {example.cores} cores  ·  "
+                                 f"{example.ram // 1024} GB  ·  {example.fps} FPS", "Small"), spacing=2)
+            lines.append(row(words, None, button("Delete", lambda n=values["name"]: self.host.delete_preset(n),
+                                                 kind="secondary")))
+        return card(*lines)
 
 
 class SetupPage(QWidget):

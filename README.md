@@ -52,6 +52,13 @@ controls they navigate Android: A is Enter, B is Back, Start is Home.
 normal, double or four times the speed. Name a macro and give it a hotkey to fire it in the middle of a
 game.
 
+**Profiles.** A profile keeps your game control layouts, macros, instance presets and preferences
+together. Make one for yourself, one for streaming, one for the family PC, and switch from the menu at
+the top right. Save an instance's hardware as a **preset** and start new instances from it. Profiles
+export to a single file, and **sync between PCs** through any folder that OneDrive, Dropbox, Google
+Drive or Syncthing already keeps up to date: pick the folder once on each PC and your layouts, macros
+and presets follow you. There is no server and no login, and Androidbox uploads nothing itself.
+
 **Several Androids at once.** Every instance has its own apps, accounts and settings. Create, clone,
 back up to a single file, restore, open any instance in its own window, tile them side by side, and
 mirror your input to all of them at the same time.
@@ -137,7 +144,13 @@ control. Drag controls to move them (drag the tip of a swipe arrow to aim it), s
 resize it, and right-click to remove it. Press Done, and the layout is saved for that game.
 
 **Macros:** press Ctrl+Shift+M, play, and press it again. On the Macros page you can rename a macro,
-change its speed and click the hotkey box to give it a shortcut such as Ctrl+1.
+change its speed and click the hotkey box to give it a shortcut such as Ctrl+1. Macros belong to your
+profile and remember the display they were recorded on, so they only play on instances with the same one.
+
+**Profiles and sync:** open the profile menu at the top right, or Manage profiles for the full page.
+To share a profile between PCs, choose **Choose a folder** under Sync between PCs, on each PC, and pick
+a folder your cloud storage syncs. Instances, apps and accounts inside Android are not part of a profile,
+use Back up for those.
 
 ## Tips
 
@@ -161,8 +174,13 @@ serve from their own servers can't be filtered by any DNS blocker.
 **Does it support root?** No. The Google Play images can't be rooted. The upside is that banking apps
 and games with root detection keep working.
 
+**Do I need an account?** No. A profile is just a name on your PC, with no password and no sign-in, and
+nothing about it leaves your PC unless you pick a sync folder. Anyone who can open that folder can read
+the profile, so don't share it with people you wouldn't hand your game layouts to.
+
 **Where is my data, and how do I remove it?** Everything lives in `%LOCALAPPDATA%\Androidbox`. Delete
-that folder, and Androidbox with all its instances is gone.
+that folder, and Androidbox with all its instances is gone. If you turned on sync, a copy of your
+profiles also sits in the folder you chose, in `Androidbox Profiles`.
 
 **Can I run it without Google Play?** Yes. Skip signing in and install apps from `.apk` files.
 
@@ -197,6 +215,7 @@ python -m venv .venv
 | `androidbox/emulator.py` | Starts and stops the emulator, adb and console commands |
 | `androidbox/bridge.py` | The gRPC link: screen stream, touch and key input, sensors |
 | `androidbox/keymap.py`, `gamepad.py` | Game controls and controller input |
+| `androidbox/profiles.py`, `settings.py` | Profiles, presets and the sync folder, plus preferences |
 | `androidbox/macros.py`, `browser.py` | Macros and the ad-free browser |
 | `androidbox/updates.py` | Asks GitHub whether a newer release is out |
 | `androidbox/ui/` | The windows: `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws Android |

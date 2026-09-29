@@ -1,21 +1,21 @@
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
-                               QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
+                               QMenu, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from .. import VERSION, browser, emulator, installer, instances, keymap, paths, settings, updates
+from .. import VERSION, browser, emulator, installer, instances, keymap, macros, paths, profiles, settings, updates
 from . import tasks
-from .controller import Controller
+from .controller import Controller, plural
 from .host import ScreenActions
-from .pages import (ControlsPage, InstancesPage, MacrosPage, NoAccelerationPage, Progress, ScreenPage, SettingsPage,
-                    SetupPage, show_text)
+from .pages import (ControlsPage, InstancesPage, MacrosPage, NoAccelerationPage, ProfilePage, Progress, ScreenPage,
+                    SettingsPage, SetupPage, show_text)
 from .popout import PopoutWindow
 from .theme import COLORS, ICONS
-from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, Toast, ToolButton, button, column, confirm,
-                      divider, glyph_css, label, row, style_title_bar)
+from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, ProfileButton, Toast, ToolButton, button, column,
+                      confirm, divider, glyph_css, label, row, style_title_bar)
 
 PAGES = {
     "screen": ("screen", "Screen"),
@@ -23,11 +23,15 @@ PAGES = {
     "macros": ("macro", "Macros"),
     "settings": ("settings", "Settings"),
     "instances": ("apps", "All instances"),
+    "profile": ("person", "Profile"),
 }
+
+GLOBAL_PAGES = ("instances", "profile")
 
 STATES = {"on": "Running", "booting": "Starting…", "stopping": "Shutting down…", "crashed": "Stopped unexpectedly"}
 BACKUP_FILTER = "Androidbox backup (*.androidbox)"
 LAYOUT_FILTER = "Game controls (*.json)"
+PROFILE_FILTER = f"Androidbox profile (*{profiles.EXTENSION})"
 
 
 def documents():
@@ -41,6 +45,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.setWindowIcon(QIcon(str(paths.ICON)))
         self.resize(1280, 840)
         self.setMinimumSize(980, 660)
+        profiles.start()
         self.prefs = settings.load()
         self.instances = instances.load()
         self.controllers = {}
@@ -77,12 +82,15 @@ class MainWindow(QMainWindow, ScreenActions):
             "macros": MacrosPage(self),
             "settings": SettingsPage(self),
             "instances": InstancesPage(self),
+            "profile": ProfilePage(self),
         }
         self.setup = SetupPage(self)
         self.no_acceleration = NoAccelerationPage(self)
         for page in (*self.pages.values(), self.setup, self.no_acceleration):
             self.stack.addWidget(page)
         self.install_shortcuts()
+        self.profile_timer = QTimer(self, interval=3000, timeout=self.watch_profile)
+        self.profile_timer.start()
 
         if installer.is_installed():
             self.open_instances()
@@ -166,6 +174,11 @@ class MainWindow(QMainWindow, ScreenActions):
         layout.addWidget(self.header_title)
         layout.addWidget(self.header_detail)
         layout.addStretch(1)
+        self.profile_chip = ProfileButton()
+        self.profile_chip.setToolTip("Your profile: game controls, macros, presets and preferences")
+        self.profile_chip.clicked.connect(self.open_profile_menu)
+        self.show_profile_name()
+        layout.addWidget(self.profile_chip)
         return self.header
 
     def run(self, work, then=None, failed=None):
@@ -206,6 +219,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.select(selected if selected in self.controllers else self.instances[0].id)
         self.check_acceleration()
         self.check_for_updates()
+        if profiles.sync_missing():
+            self.toast("Your sync folder isn't available. Using this PC's copy of your profiles for now", "bad")
 
     def setup_finished(self):
         self.open_instances()
@@ -258,7 +273,7 @@ class MainWindow(QMainWindow, ScreenActions):
             self.screen.phone.show_controller(None if instance_id in self.popouts else target)
         self.current = instance_id
         self.prefs["selected"] = instance_id
-        settings.save(self.prefs)
+        settings.save(self.prefs, "selected")
         self.overview.setChecked(instance_id is None)
         for key, item in self.instance_buttons.items():
             item.setChecked(key == instance_id)
@@ -287,13 +302,13 @@ class MainWindow(QMainWindow, ScreenActions):
 
     def show_page(self, name):
         controller = self.active()
-        if not controller:
+        if not controller and name not in GLOBAL_PAGES:
             name = "instances"
         if self.screen.phone.editing and name != "screen":
             self.screen.phone.finish_editing()
         self.page = name
         page = self.pages[name]
-        if name == "instances":
+        if name in GLOBAL_PAGES:
             page.refresh()
         elif name == "screen":
             page.refresh(controller, controller.instance.id in self.popouts)
@@ -302,6 +317,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.stack.setCurrentWidget(page)
         for key, nav in self.nav_buttons.items():
             nav.setChecked(key == name)
+        self.overview.setChecked(self.current is None and name == "instances")
         self.update_header()
 
     def show_screen(self):
@@ -362,7 +378,7 @@ class MainWindow(QMainWindow, ScreenActions):
 
     def set_pref(self, key, value):
         self.prefs[key] = value
-        settings.save(self.prefs)
+        settings.save(self.prefs, key)
         if key == "sync_input":
             self.update_mirrors()
         self.refresh_tools()
@@ -607,20 +623,39 @@ class MainWindow(QMainWindow, ScreenActions):
         android.addItem("Android 11 (runs older 32-bit games)", "30")
         modal.add(label("Name", "Section"))
         modal.add(name)
-        modal.add(label("Display", "Section"))
-        modal.add(display)
-        modal.add(label("Android version", "Section"))
-        modal.add(android)
+        saved = profiles.presets()
+        start = QComboBox()
+        start.addItem("Standard settings", None)
+        for values in saved:
+            start.addItem(values["name"], values)
+        custom = [label("Display", "Section"), display, label("Android version", "Section"), android]
+        if saved:
+            modal.add(label("Start from", "Section"))
+            modal.add(start)
+
+            def pick():
+                for widget in custom:
+                    widget.setVisible(start.currentData() is None)
+
+            start.currentIndexChanged.connect(pick)
+        for widget in custom:
+            modal.add(widget)
         modal.cancel()
-        modal.action("Create", lambda: self.create_instance(name.text(), display.currentData(), android.currentData()))
+        modal.action("Create", lambda: self.create_instance(name.text(), display.currentData(), android.currentData(),
+                                                            start.currentData()))
         modal.open()
         name.setFocus()
         name.selectAll()
 
-    def create_instance(self, name, preset, api=installer.DEFAULT_API):
-        width, height, density = instances.RESOLUTIONS[preset]
-        instance = instances.create(self.instances, name.strip() or "Android", width=width, height=height,
-                                    density=density, api=api)
+    def create_instance(self, name, display="Phone", api=installer.DEFAULT_API, preset=None):
+        if preset:
+            hardware = {key: preset[key] for key in profiles.PRESET_FIELDS if key in preset}
+            if hardware.get("api") not in installer.ANDROID_VERSIONS:
+                hardware.pop("api", None)
+        else:
+            width, height, density = instances.RESOLUTIONS[display]
+            hardware = {"width": width, "height": height, "density": density, "api": api}
+        instance = instances.create(self.instances, name.strip() or "Android", **hardware)
         self.add_controller(instance)
         self.select(instance.id)
         self.toast(f"Created {instance.name}. Its first start takes a little longer.", "good")
@@ -683,6 +718,189 @@ class MainWindow(QMainWindow, ScreenActions):
     def set_resolution(self, controller, preset):
         width, height, density = instances.RESOLUTIONS[preset]
         self.set_hardware(controller, width=width, height=height, density=density)
+
+    def ask(self, title, text, default, action, submit):
+        modal = Modal(self.dialog_parent(), title, text)
+        field = QLineEdit(default)
+        field.setMaxLength(profiles.NAME_LIMIT)
+        modal.add(field)
+        modal.cancel()
+        confirm_button = modal.action(action, lambda: submit(field.text()))
+        field.returnPressed.connect(confirm_button.click)
+        modal.open()
+        field.setFocus()
+        field.selectAll()
+
+    def show_profile_name(self):
+        name = profiles.active()
+        self.profile_chip.show_profile(name, instances.initials(name))
+
+    def open_profile_menu(self):
+        menu = QMenu(self)
+        current = profiles.active()
+        for name in profiles.names():
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name == current)
+            action.triggered.connect(lambda _=False, target=name: self.switch_profile(target))
+        menu.addSeparator()
+        menu.addAction("Manage profiles…", lambda: self.show_page("profile"))
+        menu.exec(self.profile_chip.mapToGlobal(QPoint(0, self.profile_chip.height() + 4)))
+
+    def phones(self):
+        return [self.screen.phone, *(popout.screen.phone for popout in self.popouts.values())]
+
+    def reload_profile(self):
+        for phone in self.phones():
+            phone.finish_editing()
+        self.prefs = settings.load()
+        macros.forget()
+        for phone in self.phones():
+            phone.load_controls()
+        for controller in self.controllers.values():
+            controller.macros_changed.emit()
+        self.update_mirrors()
+        self.show_profile_name()
+        self.refresh_tools()
+        for popout in self.popouts.values():
+            popout.refresh_tools()
+        if self.page in GLOBAL_PAGES or self.active():
+            self.show_page(self.page)
+
+    def watch_profile(self):
+        if any(phone.editing for phone in self.phones()):
+            return
+        if profiles.changed_outside():
+            self.reload_profile()
+            self.toast("Your profile was updated from another PC")
+
+    def switch_profile(self, name):
+        if name == profiles.active():
+            return
+        profiles.activate(name)
+        self.reload_profile()
+        self.toast(f"Switched to {name}", "good")
+
+    def new_profile(self):
+        def submit(text):
+            try:
+                name = profiles.create(text)
+            except (OSError, ValueError) as error:
+                self.toast(str(error), "bad")
+                return False
+            self.switch_profile(name)
+
+        self.ask("New profile", "Start fresh with your own game controls, macros and presets.", "", "Create", submit)
+
+    def rename_profile(self, name):
+        def submit(text):
+            try:
+                profiles.rename(name, text)
+            except (OSError, ValueError) as error:
+                self.toast(str(error), "bad")
+                return False
+            self.reload_profile()
+
+        self.ask("Rename profile", f"A new name for {name}.", name, "Rename", submit)
+
+    def duplicate_profile(self, name):
+        def submit(text):
+            try:
+                profiles.duplicate(name, text)
+            except (OSError, ValueError) as error:
+                self.toast(str(error), "bad")
+                return False
+            self.pages["profile"].refresh()
+            self.toast(f"Created {text.strip()}", "good")
+
+        self.ask("Duplicate profile", f"Copy {name} with all of its layouts, macros and presets.",
+                 profiles.unique(f"{name} copy"), "Duplicate", submit)
+
+    def delete_profile(self, name):
+        if len(profiles.names()) < 2:
+            self.toast("Keep at least one profile", "bad")
+            return
+        layouts, saved, presets = profiles.summary(name)
+        note = " It is deleted on every PC that syncs it." if profiles.syncing() else ""
+
+        def delete():
+            if name == profiles.active():
+                profiles.activate(next(other for other in profiles.names() if other != name))
+                self.reload_profile()
+            try:
+                profiles.delete(name)
+            except (OSError, ValueError) as error:
+                self.toast(str(error), "bad")
+                return
+            self.pages["profile"].refresh()
+            self.toast(f"Deleted {name}", "good")
+
+        confirm(self.dialog_parent(), f"Delete {name}?", f"This removes its {layouts} game layouts, {saved} macros "
+                f"and {presets} presets. This can't be undone.{note}", "Delete", delete, danger=True)
+
+    def export_profile(self, name):
+        file, _ = QFileDialog.getSaveFileName(self, "Export profile", str(documents() / f"{name}{profiles.EXTENSION}"),
+                                              PROFILE_FILTER)
+        if file:
+            profiles.export(name, file)
+            self.toast(f"Saved {name} to {Path(file).name}", "good")
+
+    def import_profile(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Import a profile", str(documents()), PROFILE_FILTER)
+        if not file:
+            return
+        try:
+            name = profiles.import_profile(file)
+        except (OSError, ValueError) as error:
+            self.toast(str(error), "bad")
+            return
+        self.pages["profile"].refresh()
+        self.toast(f"Imported {name}. Switch to it whenever you like", "good")
+
+    def choose_sync_folder(self):
+        start = profiles.sync_folder() or str(Path.home())
+        folder = QFileDialog.getExistingDirectory(self, "Choose a sync folder", start)
+        if not folder or Path(folder) == Path(profiles.sync_folder() or "."):
+            return
+        try:
+            uploaded, found = profiles.start_sync(folder)
+        except OSError as error:
+            self.toast(f"Couldn't use that folder: {error}", "bad")
+            return
+        self.reload_profile()
+        parts = []
+        if uploaded:
+            parts.append(f"added {plural(uploaded, 'profile')} from this PC")
+        if found:
+            parts.append(f"found {plural(found, 'profile')} already there")
+        self.toast(f"Syncing through {Path(folder).name}" + (f": {', '.join(parts)}" if parts else ""), "good")
+
+    def stop_syncing(self):
+        try:
+            profiles.stop_sync()
+        except OSError as error:
+            self.toast(f"Couldn't copy your profiles back: {error}", "bad")
+            return
+        self.reload_profile()
+        self.toast("Sync is off. This PC keeps its own copy of your profiles", "good")
+
+    def save_preset(self, controller):
+        instance = controller.instance
+
+        def submit(text):
+            try:
+                name = profiles.save_preset(text, instance)
+            except (OSError, ValueError) as error:
+                self.toast(str(error), "bad")
+                return False
+            self.toast(f"Saved the preset {name} to {profiles.active()}", "good")
+
+        self.ask("Save as a preset", "Name it, and it shows up when you create an instance.", instance.name, "Save",
+                 submit)
+
+    def delete_preset(self, name):
+        profiles.delete_preset(name)
+        self.pages["profile"].refresh()
 
     def stop_all(self):
         for controller in self.controllers.values():

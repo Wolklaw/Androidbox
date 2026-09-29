@@ -89,9 +89,13 @@ class Instance:
 
     @property
     def initials(self):
-        letters = [next(char for char in word if char.isalnum())
-                   for word in self.name.split() if any(char.isalnum() for char in word)]
-        return "".join(letters[:2]).upper() or "A"
+        return initials(self.name)
+
+
+def initials(name):
+    letters = [next(char for char in word if char.isalnum())
+               for word in name.split() if any(char.isalnum() for char in word)]
+    return "".join(letters[:2]).upper() or "A"
 
 
 def from_dict(values, **overrides):

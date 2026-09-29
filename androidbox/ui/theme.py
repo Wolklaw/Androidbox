@@ -52,6 +52,8 @@ ICONS = {
     "sync": "",
     "more": "",
     "popout": "",
+    "person": "",
+    "chevron": "",
 }
 
 

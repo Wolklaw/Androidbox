@@ -1,11 +1,11 @@
 import ctypes
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
-from .theme import COLORS, Fonts
+from .theme import COLORS, ICONS, Fonts
 
 STATUS_COLORS = {"on": COLORS["green"], "booting": COLORS["yellow"], "stopping": COLORS["yellow"],
                  "crashed": COLORS["red"]}
@@ -29,6 +29,10 @@ def text_font(size, strong=False):
     font = QFont(Fonts.strong if strong else Fonts.text)
     font.setPixelSize(size)
     return font
+
+
+def text_width(text, size=14):
+    return QFontMetrics(text_font(size)).horizontalAdvance(text)
 
 
 def glyph_css(size):
@@ -183,6 +187,51 @@ class InstanceButton(SidebarButton):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(color))
             painter.drawEllipse(QRectF(self.width() - 20, self.height() / 2 - 4, 8, 8))
+
+
+class ProfileButton(QAbstractButton):
+    def __init__(self):
+        super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(36)
+        self.tag = ""
+        self.hovered = False
+
+    def show_profile(self, name, tag):
+        self.setText(name)
+        self.tag = tag
+        self.setFixedWidth(text_width(name) + 78)
+        self.update()
+
+    def enterEvent(self, event):
+        self.hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self.hovered = False
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        if self.hovered:
+            painter.setBrush(QColor(COLORS["hover"]))
+            painter.drawRoundedRect(QRectF(self.rect()), 8, 8)
+        tile = QRectF(6, 6, 24, 24)
+        painter.setBrush(QColor(COLORS["accent"]))
+        painter.drawRoundedRect(tile, 6, 6)
+        painter.setPen(QColor(COLORS["on_accent"]))
+        painter.setFont(text_font(11, strong=True))
+        painter.drawText(tile, Qt.AlignmentFlag.AlignCenter, self.tag)
+        painter.setPen(QColor(COLORS["bright"] if self.hovered else COLORS["text"]))
+        painter.setFont(text_font(14))
+        painter.drawText(QRectF(38, 0, self.width() - 62, self.height()),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
+        painter.setPen(QColor(COLORS["muted"]))
+        painter.setFont(icon_font(10))
+        painter.drawText(QRectF(self.width() - 26, 0, 20, self.height()), Qt.AlignmentFlag.AlignCenter,
+                         ICONS["chevron"])
 
 
 class Toggle(QAbstractButton):

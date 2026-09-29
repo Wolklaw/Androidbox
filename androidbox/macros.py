@@ -4,40 +4,46 @@ import re
 import threading
 import time
 
-from . import paths
+from . import profiles
 
 SPEEDS = (0.5, 1.0, 2.0, 4.0)
 
-
-def folder(instance):
-    return paths.MACROS / instance.id
+cache = {}
 
 
-def file(instance, name):
-    return folder(instance) / f"{name}.json"
+def file(name):
+    return profiles.macro_folder() / f"{name}.json"
 
 
-def load(instance):
-    macros = []
-    for path in sorted(folder(instance).glob("*.json")):
-        try:
-            macros.append(json.loads(path.read_text()))
-        except (OSError, ValueError):
-            continue
-    return macros
+def forget():
+    cache.clear()
 
 
-def next_name(instance):
-    taken = {macro["name"] for macro in load(instance)}
+def load():
+    folder = profiles.macro_folder()
+    if cache.get("folder") != folder:
+        macros = []
+        for path in sorted(folder.glob("*.json")):
+            try:
+                macros.append(json.loads(path.read_text()))
+            except (OSError, ValueError):
+                continue
+        cache["folder"] = folder
+        cache["all"] = macros
+    return cache["all"]
+
+
+def next_name():
+    taken = {macro["name"] for macro in load()}
     return next(f"Macro {n}" for n in range(1, 1000) if f"Macro {n}" not in taken)
 
 
-def write(instance, macro):
-    folder(instance).mkdir(parents=True, exist_ok=True)
-    file(instance, macro["name"]).write_text(json.dumps(macro))
+def write(macro):
+    profiles.write_json(file(macro["name"]), macro, indent=None)
+    forget()
 
 
-def save(instance, name, recording):
+def save(name, recording, display):
     if not recording:
         return None
     start = recording[0][0]
@@ -46,27 +52,30 @@ def save(instance, name, recording):
         "duration": round(recording[-1][0] - start, 2),
         "speed": 1.0,
         "hotkey": "",
+        "display": list(display),
         "events": [[round(at - start, 4), base64.b64encode(payload).decode()] for at, payload in recording],
     }
-    write(instance, macro)
+    write(macro)
     return macro
 
 
-def update(instance, current, **changes):
-    macro = json.loads(file(instance, current).read_text())
+def update(current, **changes):
+    macro = json.loads(file(current).read_text())
     if "name" in changes:
-        changes["name"] = re.sub(r'[\\/:*?"<>|]', "", changes["name"]).strip() or current
-        if changes["name"] != current and file(instance, changes["name"]).exists():
+        changes["name"] = re.sub(r'[\/:*?"<>|]', "", changes["name"]).strip() or current
+        if changes["name"] != current and file(changes["name"]).exists():
             raise ValueError(f"A macro called {changes['name']} already exists")
     macro.update(changes)
-    write(instance, macro)
+    write(macro)
     if macro["name"] != current:
-        file(instance, current).unlink(missing_ok=True)
+        delete(current)
     return macro
 
 
-def delete(instance, name):
-    file(instance, name).unlink(missing_ok=True)
+def delete(name):
+    file(name).unlink(missing_ok=True)
+    profiles.stamp()
+    forget()
 
 
 class Player:

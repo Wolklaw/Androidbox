@@ -54,7 +54,6 @@ class Controller(QObject):
         self.video = None
         self.video_part = 0
         self.video_stamp = ""
-        self.macro_cache = None
         self.player = None
         self.playing = None
         self.last_clip = None
@@ -62,11 +61,7 @@ class Controller(QObject):
         self.timer = QTimer(self, interval=1500, timeout=self.poll)
         self.timer.start()
         self.video_timer = QTimer(self, singleShot=True, timeout=self.video_finished)
-        self.macros_changed.connect(self.forget_macros)
         self.poll()
-
-    def forget_macros(self):
-        self.macro_cache = None
 
     @property
     def state(self):
@@ -343,7 +338,7 @@ class Controller(QObject):
     def trigger_macro(self, key):
         if not self.bridge:
             return False
-        macro = next((macro for macro in self.macro_list() if macro.get("hotkey") == key), None)
+        macro = next((macro for macro in macros.load() if macro.get("hotkey") == key), None)
         if not macro:
             return False
         if self.playing == macro["name"]:
@@ -352,14 +347,9 @@ class Controller(QObject):
             self.play_macro(macro, 1)
         return True
 
-    def macro_list(self):
-        if self.macro_cache is None:
-            self.macro_cache = macros.load(self.instance)
-        return self.macro_cache
-
     def update_macro(self, current, **changes):
         try:
-            macros.update(self.instance, current, **changes)
+            macros.update(current, **changes)
         except (OSError, ValueError) as error:
             self.notify.emit(str(error), "bad")
         self.macros_changed.emit()
@@ -373,7 +363,7 @@ class Controller(QObject):
             self.notify.emit("Recording a macro. Use Android, then click the macro button again", "text")
         else:
             recording, self.bridge.recording = self.bridge.recording, None
-            macro = macros.save(self.instance, macros.next_name(self.instance), recording)
+            macro = macros.save(macros.next_name(), recording, (self.instance.width, self.instance.height))
             if macro:
                 self.notify.emit(f"Saved {macro['name']} ({macro['duration']:.1f}s)", "good")
             else:
@@ -384,6 +374,11 @@ class Controller(QObject):
     def play_macro(self, macro, loops=1):
         if not self.bridge:
             self.notify.emit("Start Android to play macros", "text")
+            return
+        display = macro.get("display")
+        if display and list(display) != [self.instance.width, self.instance.height]:
+            self.notify.emit(f"{macro['name']} was recorded on a {display[0]}×{display[1]} display, so it only "
+                             "plays on an instance with the same one", "bad")
             return
         self.stop_macro()
         self.playing = macro["name"]

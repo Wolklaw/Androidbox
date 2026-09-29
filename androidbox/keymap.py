@@ -3,7 +3,7 @@ import math
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-from . import paths
+from . import profiles
 
 FIRST_TOUCH = 10
 AIM_REACH = 0.22
@@ -49,7 +49,7 @@ class Control:
 
 
 def profile(package):
-    return paths.KEYMAPS / f"{package}.json"
+    return profiles.keymaps() / f"{package}.json"
 
 
 def parse(entries):
@@ -77,12 +77,12 @@ def import_layout(package, file):
 
 
 def save(package, controls):
-    paths.KEYMAPS.mkdir(parents=True, exist_ok=True)
     kept = [control for control in controls if control.kind == "joystick" or control.key]
     if kept:
-        profile(package).write_text(json.dumps([asdict(control) for control in kept], indent=2))
+        profiles.write_json(profile(package), [asdict(control) for control in kept])
     else:
         profile(package).unlink(missing_ok=True)
+        profiles.stamp()
 
 
 class Engine:
