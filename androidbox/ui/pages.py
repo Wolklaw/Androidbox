@@ -2,11 +2,11 @@ import subprocess
 import time
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QPlainTextEdit, QScrollArea,
-                               QStackedWidget, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLineEdit, QMenu, QPlainTextEdit,
+                               QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
-from .. import installer, instances, keymap, macros
+from .. import VERSION, installer, instances, keymap, macros
 from .phone import PhoneView
 from .theme import COLORS, ICONS
 from .tools import ToolRail
@@ -132,6 +132,18 @@ def setting(title, text, control):
     return line
 
 
+def pair(title, text):
+    line = QWidget()
+    layout = QHBoxLayout(line)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(16)
+    heading = label(title, "Subheading")
+    heading.setFixedWidth(130)
+    layout.addWidget(heading, 0, Qt.AlignmentFlag.AlignTop)
+    layout.addWidget(label(text, "Muted", wrap=True), 1)
+    return line
+
+
 def choice(options, current):
     combo = QComboBox()
     for text, value in options:
@@ -140,6 +152,17 @@ def choice(options, current):
     combo.setMinimumWidth(220)
     combo.setCursor(Qt.CursorShape.PointingHandCursor)
     return combo
+
+
+def show_text(parent, title, text):
+    modal = Modal(parent, title, width=640)
+    page = QPlainTextEdit(text)
+    page.setReadOnly(True)
+    page.setMinimumHeight(380)
+    page.setStyleSheet(f"background: {COLORS['input']}; border: none; border-radius: 8px; padding: 8px;")
+    modal.add(page)
+    modal.action("Close")
+    return modal.open()
 
 
 def menu_button(actions):
@@ -269,7 +292,11 @@ class ControlsPage(Page):
         edit.setEnabled(bool(package))
         clear = button("Clear", lambda: self.clear_controls(package), kind="secondary")
         clear.setEnabled(bool(controls))
-        self.add(card(label("Current app", "Section"), current, row(edit, clear, None)))
+        load = button("Import…", lambda: self.host.import_controls(package), kind="secondary")
+        load.setEnabled(bool(package))
+        share = button("Export…", lambda: self.host.export_controls(package), kind="secondary")
+        share.setEnabled(bool(controls))
+        self.add(card(label("Current app", "Section"), current, row(edit, clear, None, load, share)))
 
         enabled = Toggle(prefs["game_controls"])
         enabled.toggled.connect(lambda on: self.host.set_pref("game_controls", on))
@@ -281,23 +308,21 @@ class ControlsPage(Page):
 
         if controls:
             rows = [label("This game", "Section")]
-            for control in controls:
-                chip = label(control.label(), "Subheading")
-                chip.setMinimumWidth(96)
-                rows.append(row(chip, label(control.describe(), "Muted"), None))
+            rows += [pair(control.label(), control.describe()) for control in controls]
             self.add(card(*rows, spacing=8))
 
         kinds = [("Tap", "Click the screen while editing, then press a key or controller button"),
                  ("Joystick", "Moves with WASD, the D-pad or the left stick. Select it and press four keys to "
                               "rebind"),
                  ("Aim", "Shooter mode: its key locks the mouse, and moving the mouse turns the camera"),
+                 ("Look", "Like Aim, but only while you hold its key"),
                  ("Fire and Scope", "Taps for the left and right mouse buttons while aiming"),
-                 ("Skill", "MOBA casting: hold the key, point with the mouse, release to cast")]
+                 ("Skill", "MOBA casting: hold the key, point with the mouse, release to cast"),
+                 ("Turbo", "Hold the key to tap the same spot rapidly"),
+                 ("Swipe", "One key performs a drag along an arrow you place"),
+                 ("Zoom", "Hold Ctrl and scroll to pinch in and out, no setup needed")]
         rows = [label("Controls you can add", "Section")]
-        for name, what in kinds:
-            title = label(name, "Subheading")
-            title.setMinimumWidth(96)
-            rows.append(row(title, label(what, "Muted", wrap=True), spacing=8))
+        rows += [pair(name, what) for name, what in kinds]
         self.add(card(*rows, spacing=8))
 
         tips = ["Left-click taps, drag swipes, the scroll wheel scrolls",
@@ -330,20 +355,42 @@ class MacrosPage(Page):
         if not saved:
             self.add(card(label("No macros yet. Record one, and it shows up here.", "Muted")))
             return
-        rows = []
-        for macro in saved:
-            name = macro["name"]
-            details = column(label(name, "Subheading"),
-                             label(f"{macro['duration']:.1f} seconds · {len(macro['events'])} actions", "Small"),
-                             spacing=2)
-            if controller.playing == name:
-                actions = [button("Stop", controller.stop_macro, kind="danger")]
-            else:
-                actions = [button("Play", lambda m=macro: self.play(controller, m, 1)),
-                           button("Loop", lambda m=macro: self.play(controller, m, 0), kind="secondary")]
-            actions.append(button("Delete", lambda n=name: self.delete(controller, n), kind="secondary"))
-            rows.append(row(details, None, *actions))
-        self.add(card(label("Saved", "Section"), *rows, spacing=10))
+        rows = [label("Saved", "Section")]
+        for number, macro in enumerate(saved):
+            if number:
+                rows.append(divider())
+            rows.append(self.macro_row(controller, macro))
+        self.add(card(*rows, spacing=10))
+
+    def macro_row(self, controller, macro):
+        name = macro["name"]
+        title = QLineEdit(name)
+        title.setMaxLength(40)
+        title.setFixedWidth(200)
+        def rename():
+            text = title.text().strip()
+            if text and text != name:
+                controller.update_macro(name, name=text)
+
+        title.editingFinished.connect(rename)
+        stats = label(f"{macro['duration']:.1f} seconds · {len(macro['events'])} actions", "Small")
+        if controller.playing == name:
+            actions = [button("Stop", controller.stop_macro, kind="danger")]
+        else:
+            actions = [button("Play", lambda: self.play(controller, macro, 1)),
+                       button("Loop", lambda: self.play(controller, macro, 0), kind="secondary")]
+        actions.append(button("Delete", lambda: self.delete(controller, name), kind="secondary"))
+        speed = choice([(f"{value:g}×", value) for value in macros.SPEEDS], macro.get("speed", 1.0))
+        speed.setMinimumWidth(90)
+        speed.currentIndexChanged.connect(lambda: controller.update_macro(name, speed=speed.currentData()))
+        hotkey = QKeySequenceEdit(QKeySequence(macro.get("hotkey", "")))
+        hotkey.setMaximumSequenceLength(1)
+        hotkey.setClearButtonEnabled(True)
+        hotkey.setFixedWidth(150)
+        hotkey.editingFinished.connect(lambda: controller.update_macro(name, hotkey=hotkey.keySequence().toString()))
+        options = row(label("Speed", "Small"), speed, label("Hotkey", "Small"), hotkey,
+                      label("Press it on the screen to play or stop, like Ctrl+1", "Small"), None, spacing=10)
+        return column(row(title, stats, None, *actions), options, spacing=8)
 
     def play(self, controller, macro, loops):
         controller.play_macro(macro, loops)
@@ -363,7 +410,8 @@ class SettingsPage(Page):
         self.clear()
         host = self.host
         instance = controller.instance
-        self.intro("Settings", f"Settings for {instance.name}. Hardware changes apply the next time it starts.")
+        self.intro("Settings", f"Settings for {instance.name}, which runs {instance.android}. Hardware changes "
+                               "apply the next time it starts.")
 
         name = QLineEdit(instance.name)
         name.setMaxLength(32)
@@ -392,12 +440,16 @@ class SettingsPage(Page):
 
         eco = Toggle(instance.eco)
         eco.toggled.connect(controller.set_eco)
+        webcam = Toggle(instance.camera)
+        webcam.toggled.connect(lambda on: host.set_hardware(controller, camera=on))
         ads = Toggle(instance.block_ads)
         ads.toggled.connect(controller.set_block_ads)
         browser = button("Set up", lambda: host.set_up_browser(controller), kind="secondary")
         self.add(card(label("Extras", "Section"),
                       setting("Eco mode", "Draws fewer frames and lowers Android's CPU priority. Good for "
                                           "idle games running in the background.", eco), divider(),
+                      setting("Webcam", "Lets Android apps use your PC's webcam as their camera. Applies the "
+                                        "next time Android starts.", webcam), divider(),
                       setting("Block ads", "Blocks ad networks inside apps and games. It can't remove ads that "
                                            "come from the same servers as the content, like YouTube's.", ads),
                       divider(),
@@ -430,16 +482,18 @@ class InstancesPage(Page):
         running = any(c.state not in ("off", "crashed") for c in host.controllers.values())
         stop_all = button("Stop all", host.stop_all, kind="secondary")
         stop_all.setEnabled(running)
+        tile = button("Side by side", host.arrange, kind="secondary")
+        tile.setEnabled(any(c.on for c in host.controllers.values()))
         self.add(row(button("New instance", host.new_instance),
-                     button("Restore a backup", host.restore_backup, kind="secondary"), stop_all, None))
+                     button("Restore a backup", host.restore_backup, kind="secondary"), tile, stop_all, None))
         rows = []
         for controller in host.controllers.values():
             instance = controller.instance
             color = COLORS["green"] if controller.state == "on" else COLORS["faint"]
             words = column(label(instance.name, "Subheading"),
                            label(f"<span style='color:{color}'>●</span>  {STATES.get(controller.state, 'Off')}  ·  "
-                                 f"{instance.resolution}  ·  {instance.cores} cores  ·  {instance.ram // 1024} GB  ·  "
-                                 f"{instance.fps} FPS", "Small"), spacing=2)
+                                 f"{instance.android}  ·  {instance.resolution}  ·  {instance.cores} cores  ·  "
+                                 f"{instance.ram // 1024} GB  ·  {instance.fps} FPS", "Small"), spacing=2)
             if controller.state in ("off", "crashed"):
                 power = button("Start", controller.start)
             else:
@@ -462,11 +516,15 @@ class InstancesPage(Page):
         sync.toggled.connect(lambda on: host.set_pref("sync_input", on))
         fps = Toggle(host.prefs["show_fps"])
         fps.toggled.connect(lambda on: host.set_pref("show_fps", on))
+        updates = Toggle(host.prefs["check_updates"])
+        updates.toggled.connect(lambda on: host.set_pref("check_updates", on))
         self.add(card(label("Everywhere", "Section"),
                       setting("Sync input", "Mirror taps and keys from the instance you're using to every other "
                                             "running instance. Best when they use the same display setting.", sync),
                       divider(),
-                      setting("Show FPS", "Show frames per second in the corner of the screen.", fps)))
+                      setting("Show FPS", "Show frames per second in the corner of the screen.", fps), divider(),
+                      setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub once "
+                                                   "per start whether a newer release is out.", updates)))
 
         shortcuts = [("F11", "Full screen"), ("Ctrl+Shift+S", "Screenshot"), ("Ctrl+Shift+R", "Record the screen"),
                      ("Ctrl+Shift+K", "Game controls on or off"), ("Ctrl+Shift+E", "Edit game controls"),
@@ -547,14 +605,7 @@ class SetupPage(QWidget):
         self.begin()
 
     def show_license(self):
-        modal = Modal(self.host.dialog_parent(), "Android SDK License", width=640)
-        terms = QPlainTextEdit("\n\n".join(self.licenses.values()))
-        terms.setReadOnly(True)
-        terms.setMinimumHeight(380)
-        terms.setStyleSheet(f"background: {COLORS['input']}; border: none; border-radius: 8px; padding: 8px;")
-        modal.add(terms)
-        modal.action("Close")
-        modal.open()
+        show_text(self.host.dialog_parent(), "Android SDK License", "\n\n".join(self.licenses.values()))
 
     def install(self):
         missing = [package for package in self.packages if not package.installed]

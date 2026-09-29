@@ -11,14 +11,23 @@ from . import paths
 REPOSITORY = "https://dl.google.com/android/repository/"
 STABLE = "channel-0"
 
-IMAGE_API = "35"
 IMAGE_TAG = "google_apis_playstore"
 IMAGE_ABI = "x86_64"
-IMAGE_NAME = "Android 15"
 IMAGE_REPOSITORY = f"{REPOSITORY}sys-img/{IMAGE_TAG}/"
-IMAGE_DIR = Path("system-images", f"android-{IMAGE_API}", IMAGE_TAG, IMAGE_ABI)
+ANDROID_VERSIONS = {"35": "Android 15", "30": "Android 11"}
+DEFAULT_API = "35"
+IMAGE_NAME = ANDROID_VERSIONS[DEFAULT_API]
 
-REQUIRED = [Path("platform-tools"), Path("emulator"), IMAGE_DIR]
+
+def image_dir(api):
+    return Path("system-images", f"android-{api}", IMAGE_TAG, IMAGE_ABI)
+
+
+def image_installed(api):
+    return (paths.SDK / image_dir(api)).is_dir()
+
+
+REQUIRED = [Path("platform-tools"), Path("emulator"), image_dir(DEFAULT_API)]
 
 
 @dataclass
@@ -39,15 +48,15 @@ def is_installed():
     return all((paths.SDK / folder).is_dir() for folder in REQUIRED)
 
 
-def resolve():
+def resolve(api=DEFAULT_API, tools=True):
     repository = fetch_xml(REPOSITORY + "repository2-3.xml")
     images = fetch_xml(IMAGE_REPOSITORY + "sys-img2-3.xml")
-    packages = [
-        newest(repository, "platform-tools", REPOSITORY, "adb", REQUIRED[0]),
-        newest(repository, "emulator", REPOSITORY, "the emulator", REQUIRED[1]),
-        newest(images, f"system-images;android-{IMAGE_API};{IMAGE_TAG};{IMAGE_ABI}",
-               IMAGE_REPOSITORY, IMAGE_NAME, IMAGE_DIR),
-    ]
+    packages = []
+    if tools:
+        packages += [newest(repository, "platform-tools", REPOSITORY, "adb", REQUIRED[0]),
+                     newest(repository, "emulator", REPOSITORY, "the emulator", REQUIRED[1])]
+    packages.append(newest(images, f"system-images;android-{api};{IMAGE_TAG};{IMAGE_ABI}",
+                           IMAGE_REPOSITORY, ANDROID_VERSIONS[api], image_dir(api)))
     texts = {**licenses(images), **licenses(repository)}
     return packages, {p.license: texts.get(p.license, "") for p in packages}
 

@@ -1,6 +1,7 @@
 import json
 import math
 from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 
 from . import paths
 
@@ -20,19 +21,30 @@ class Control:
     keys: list = field(default_factory=lambda: ["W", "A", "S", "D"])
     size: float = 0.12
     speed: float = 1.0
+    x2: float = None
+    y2: float = None
 
     def label(self):
         if self.kind == "joystick":
             return " ".join(self.keys)
         return SHORT_NAMES.get(self.key, self.key)
 
+    def end(self):
+        return (self.x if self.x2 is None else self.x2), (max(0.0, self.y - 0.2) if self.y2 is None else self.y2)
+
     def describe(self):
         if self.kind == "joystick":
             return f"Joystick on {'/'.join(self.keys)}, the D-pad and the left stick"
         if self.kind == "aim":
             return f"Aim: {self.key} locks the mouse to look around. The right stick works too"
+        if self.kind == "look":
+            return f"Look: hold {self.key} and move the mouse to look around"
         if self.kind == "skill":
             return f"Skill: hold {self.key}, point with the mouse, release to cast"
+        if self.kind == "turbo":
+            return f"Turbo: hold {self.key} to tap rapidly at {self.x:.0%} across, {self.y:.0%} down"
+        if self.kind == "swipe":
+            return f"Swipe: {self.key} drags along the arrow"
         return f"Tap at {self.x:.0%} across, {self.y:.0%} down"
 
 
@@ -40,13 +52,28 @@ def profile(package):
     return paths.KEYMAPS / f"{package}.json"
 
 
-def load(package):
+def parse(entries):
     known = {item.name for item in fields(Control)}
+    return [Control(**{k: v for k, v in entry.items() if k in known}) for entry in entries]
+
+
+def load(package):
     try:
-        entries = json.loads(profile(package).read_text())
-        return [Control(**{k: v for k, v in entry.items() if k in known}) for entry in entries]
+        return parse(json.loads(profile(package).read_text()))
     except (OSError, ValueError, TypeError):
         return []
+
+
+def export(package, file):
+    layout = {"package": package, "controls": [asdict(control) for control in load(package)]}
+    Path(file).write_text(json.dumps(layout, indent=2))
+
+
+def import_layout(package, file):
+    data = json.loads(Path(file).read_text())
+    controls = parse(data["controls"] if isinstance(data, dict) else data)
+    save(package, controls)
+    return len(controls)
 
 
 def save(package, controls):
@@ -81,7 +108,18 @@ class Engine:
         return identifier, u, v, down
 
     def aim_control(self):
-        return next((control for control in self.controls if control.kind == "aim"), None)
+        return next((control for control in self.controls if control.kind in ("aim", "look")), None)
+
+    def swipes(self, key):
+        return [control for control in self.controls if control.kind == "swipe" and control.key == key]
+
+    def pulse(self):
+        touches = []
+        for control in self.controls:
+            identifier = self.identifier(control)
+            if control.kind == "turbo" and identifier in self.pressed:
+                touches.append(self.touch(identifier, control.x, control.y, identifier not in self.touching))
+        return touches
 
     def handles(self, key):
         for control in self.controls:
@@ -97,6 +135,14 @@ class Engine:
             identifier = self.identifier(control)
             if control.kind == "tap" and control.key == key:
                 touches.append(self.touch(identifier, control.x, control.y, down))
+            elif control.kind == "turbo" and control.key == key:
+                if down:
+                    self.pressed[identifier] = {key}
+                    touches.append(self.touch(identifier, control.x, control.y, True))
+                else:
+                    self.pressed.pop(identifier, None)
+                    if identifier in self.touching:
+                        touches.append(self.touch(identifier, control.x, control.y, False))
             elif control.kind == "skill" and control.key == key:
                 touches.extend(self.cast(control, down, width, height))
             elif control.kind == "joystick" and (key in control.keys or key in PAD_DIRECTIONS):

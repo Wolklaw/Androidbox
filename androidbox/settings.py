@@ -8,6 +8,8 @@ DEFAULTS = {
     "show_hints": True,
     "show_fps": False,
     "sync_input": False,
+    "check_updates": True,
+    "skipped_version": "",
 }
 
 

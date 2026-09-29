@@ -1,3 +1,5 @@
+import contextlib
+import mmap
 import queue
 import threading
 import time
@@ -14,11 +16,12 @@ KEYPRESS = pb.KeyboardEvent.keypress
 
 
 class Bridge:
-    def __init__(self, port, token):
+    def __init__(self, port, token, frames=None):
         self.channel = grpc.insecure_channel(f"127.0.0.1:{port}",
                                              options=[("grpc.max_receive_message_length", 256 << 20)])
         self.stub = rpc.EmulatorControllerStub(self.channel)
         self.metadata = [("authorization", f"Bearer {token}")]
+        self.frames = frames
         self.outbox = queue.Queue()
         self.screen = None
         self.recording = None
@@ -59,17 +62,48 @@ class Bridge:
     def type(self, text):
         self.send(pb.InputEvent(key_event=pb.KeyboardEvent(text=text)))
 
+    def shared_frames(self, width, height):
+        if not self.frames:
+            return None, None
+        size = width * height * 4
+        path = self.frames.with_name(f"{self.frames.stem}-{size}.frame")
+        for stale in self.frames.parent.glob(f"{self.frames.stem}-*.frame"):
+            if stale != path:
+                with contextlib.suppress(OSError):
+                    stale.unlink()
+        try:
+            if not path.exists() or path.stat().st_size < size:
+                path.write_bytes(bytes(size))
+            with open(path, "r+b") as file:
+                view = mmap.mmap(file.fileno(), size)
+        except (OSError, ValueError):
+            return None, None
+        return view, pb.ImageTransport(channel=pb.ImageTransport.MMAP, handle="file:///" + path.as_posix())
+
     def watch(self, width, height, on_frame):
         self.unwatch()
-        request = pb.ImageFormat(format=pb.ImageFormat.RGB888, width=width, height=height)
+        view, transport = self.shared_frames(width, height)
+        if view:
+            request = pb.ImageFormat(format=pb.ImageFormat.RGBA8888, width=width, height=height, transport=transport)
+        else:
+            request = pb.ImageFormat(format=pb.ImageFormat.RGB888, width=width, height=height)
         self.screen = call = self.stub.streamScreenshot(request, metadata=self.metadata)
 
         def pump():
             try:
                 for image in call:
-                    on_frame(image.image, image.format.width, image.format.height, image.format.rotation.rotation)
+                    shape = image.format
+                    if image.image:
+                        depth = len(image.image) // max(shape.width * shape.height, 1)
+                        on_frame(image.image, shape.width, shape.height, shape.rotation.rotation, depth)
+                    elif view:
+                        pixels = view[:shape.width * shape.height * 4]
+                        on_frame(pixels, shape.width, shape.height, shape.rotation.rotation, 4)
             except grpc.RpcError:
                 pass
+            finally:
+                if view:
+                    view.close()
 
         threading.Thread(target=pump, daemon=True).start()
 

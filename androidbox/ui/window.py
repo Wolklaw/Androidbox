@@ -1,17 +1,17 @@
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from .. import browser, emulator, installer, instances, paths, settings
+from .. import VERSION, browser, emulator, installer, instances, keymap, paths, settings, updates
 from . import tasks
 from .controller import Controller
 from .host import ScreenActions
 from .pages import (ControlsPage, InstancesPage, MacrosPage, NoAccelerationPage, Progress, ScreenPage, SettingsPage,
-                    SetupPage)
+                    SetupPage, show_text)
 from .popout import PopoutWindow
 from .theme import COLORS, ICONS
 from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, Toast, ToolButton, button, column, confirm,
@@ -27,6 +27,7 @@ PAGES = {
 
 STATES = {"on": "Running", "booting": "Starting…", "stopping": "Shutting down…", "crashed": "Stopped unexpectedly"}
 BACKUP_FILTER = "Androidbox backup (*.androidbox)"
+LAYOUT_FILTER = "Game controls (*.json)"
 
 
 def documents():
@@ -204,6 +205,7 @@ class MainWindow(QMainWindow, ScreenActions):
         selected = self.prefs["selected"]
         self.select(selected if selected in self.controllers else self.instances[0].id)
         self.check_acceleration()
+        self.check_for_updates()
 
     def setup_finished(self):
         self.open_instances()
@@ -228,6 +230,7 @@ class MainWindow(QMainWindow, ScreenActions):
         controller.changed.connect(lambda: self.controller_changed(controller))
         controller.app_changed.connect(lambda: self.app_changed(controller))
         controller.macros_changed.connect(lambda: self.macros_changed(controller))
+        controller.image_missing.connect(lambda: self.get_image(controller))
         controller.notify.connect(self.toast)
         item = InstanceButton(instance)
         item.clicked.connect(lambda: self.select(instance.id))
@@ -274,7 +277,7 @@ class MainWindow(QMainWindow, ScreenActions):
         state = controller.state
         color = STATUS_COLORS.get(state, COLORS["dim"])
         self.status.setText(f"<span style='color:{color}'>●</span>&nbsp; {STATES.get(state, 'Off')} · "
-                            f"{installer.IMAGE_NAME}")
+                            f"{controller.instance.android}")
         off = state in ("off", "crashed")
         self.power.setText("Start Android" if off else "Stop Android")
         self.power.setProperty("kind", None if off else "secondary")
@@ -443,6 +446,100 @@ class MainWindow(QMainWindow, ScreenActions):
         self.run(lambda: browser.set_up(controller.emulator, report), finished,
                  lambda error: progress.done("Couldn't set up Firefox", str(error)))
 
+    def check_for_updates(self):
+        if not self.prefs["check_updates"]:
+            return
+
+        def found(result):
+            version, url = result
+            if not updates.newer(version) or self.prefs["skipped_version"] == version:
+                return
+            modal = Modal(self.dialog_parent(), f"Androidbox {version} is out",
+                          f"You have {VERSION}. The new version is on GitHub, ready to download.")
+            modal.action("Skip this version", lambda: self.set_pref("skipped_version", version), kind="secondary")
+            modal.action("Download", lambda: QDesktopServices.openUrl(QUrl(url)))
+            modal.open()
+
+        self.run(updates.latest, found, lambda _: None)
+
+    def export_controls(self, package):
+        file, _ = QFileDialog.getSaveFileName(self, "Export game controls", str(documents() / f"{package}.json"),
+                                              LAYOUT_FILTER)
+        if file:
+            keymap.export(package, file)
+            self.toast(f"Saved the layout to {Path(file).name}", "good")
+
+    def import_controls(self, package):
+        file, _ = QFileDialog.getOpenFileName(self, "Import game controls", str(documents()), LAYOUT_FILTER)
+        if not file:
+            return
+        try:
+            count = keymap.import_layout(package, file)
+        except (OSError, ValueError, TypeError, KeyError):
+            self.toast("That file isn't a game controls layout", "bad")
+            return
+        for phone in [self.screen.phone, *(popout.screen.phone for popout in self.popouts.values())]:
+            if phone.package == package:
+                phone.load_controls()
+        self.controls_changed()
+        self.toast(f"Imported {count} controls for {package}", "good")
+
+    def arrange(self):
+        running = [controller for controller in self.controllers.values() if controller.on]
+        if not running:
+            return
+        for controller in running:
+            self.pop_out(controller)
+        area = self.windowHandle().screen().availableGeometry()
+        width = area.width() // len(running)
+        for index, controller in enumerate(running):
+            window = self.popouts[controller.instance.id]
+            window.showNormal()
+            extra_width = window.frameGeometry().width() - window.width()
+            extra_height = window.frameGeometry().height() - window.height()
+            window.resize(width - extra_width, area.height() - extra_height)
+            window.move(area.left() + index * width, area.top())
+
+    def get_image(self, controller):
+        instance = controller.instance
+
+        def resolved(result):
+            packages, licenses = result
+            size = sum(package.size for package in packages if not package.installed) / 1e9
+            modal = Modal(self.dialog_parent(), f"Download {instance.android}",
+                          f"{instance.name} runs {instance.android}, which isn't on this PC yet. It's a {size:.1f} GB "
+                          "download from Google, and you only need it once.")
+            terms = "\n\n".join(licenses.values())
+            modal.add(button("Read the license", lambda: show_text(self.dialog_parent(), "License", terms),
+                             kind="link"))
+            modal.cancel()
+            modal.action("Agree and download", lambda: self.download_image(controller, packages))
+            modal.open()
+
+        self.run(lambda: installer.resolve(instance.api, tools=False), resolved,
+                 lambda _: self.toast("Couldn't reach Google. Check your internet connection", "bad"))
+
+    def download_image(self, controller, packages):
+        name = controller.instance.android
+        progress = Progress(self.dialog_parent(), f"Getting {name}", "Straight from Google. This happens once.")
+        last = [0.0]
+
+        def report(package, done, total, stage):
+            now = time.monotonic()
+            if now - last[0] < 0.1 and done < total:
+                return
+            last[0] = now
+            verb = {"download": "Downloading", "verify": "Verifying", "unpack": "Unpacking"}[stage]
+            amount = f" · {done / 1e6:,.0f} of {total / 1e6:,.0f} MB" if stage == "download" else ""
+            self.later(lambda: progress.update_progress(f"{verb} {name}{amount}", done / max(total, 1)))
+
+        def installed(_):
+            progress.close_modal()
+            controller.start()
+
+        self.run(lambda: installer.install(packages, report), installed,
+                 lambda error: progress.done("Download stopped", f"{error}. Start the instance again to resume."))
+
     def back_up(self, controller):
         instance = controller.instance
         if controller.state not in ("off", "crashed"):
@@ -505,20 +602,25 @@ class MainWindow(QMainWindow, ScreenActions):
         display = QComboBox()
         for preset, (width, height, _) in instances.RESOLUTIONS.items():
             display.addItem(f"{preset}  ·  {width}×{height}", preset)
+        android = QComboBox()
+        android.addItem("Android 15 (recommended)", "35")
+        android.addItem("Android 11 (runs older 32-bit games)", "30")
         modal.add(label("Name", "Section"))
         modal.add(name)
         modal.add(label("Display", "Section"))
         modal.add(display)
+        modal.add(label("Android version", "Section"))
+        modal.add(android)
         modal.cancel()
-        modal.action("Create", lambda: self.create_instance(name.text(), display.currentData()))
+        modal.action("Create", lambda: self.create_instance(name.text(), display.currentData(), android.currentData()))
         modal.open()
         name.setFocus()
         name.selectAll()
 
-    def create_instance(self, name, preset):
+    def create_instance(self, name, preset, api=installer.DEFAULT_API):
         width, height, density = instances.RESOLUTIONS[preset]
         instance = instances.create(self.instances, name.strip() or "Android", width=width, height=height,
-                                    density=density)
+                                    density=density, api=api)
         self.add_controller(instance)
         self.select(instance.id)
         self.toast(f"Created {instance.name}. Its first start takes a little longer.", "good")

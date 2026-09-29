@@ -1,3 +1,4 @@
+import contextlib
 import json
 import shutil
 import time
@@ -9,7 +10,7 @@ from . import installer, paths
 
 CONSOLE_PORTS = [5580, 5582, 5584, 5578, 5576, 5574, 5572, 5570, 5568, 5566, 5564, 5562, 5560, 5558, 5556, 5554]
 GRPC_BASE = 8554
-FRAME_RATES = (60, 90, 120)
+FRAME_RATES = (60, 90, 120, 144, 240)
 BACKUP_SKIPS = {"snapshots", "hardware-qemu.ini.lock", "multiinstance.lock", "hardware-qemu.ini",
                 "emu-launch-params.txt"}
 CHUNK = 1 << 22
@@ -28,14 +29,11 @@ HARDWARE = {
     "tag.display": "Google Play",
     "abi.type": installer.IMAGE_ABI,
     "hw.cpu.arch": installer.IMAGE_ABI,
-    "image.sysdir.1": f"{installer.IMAGE_DIR}\\",
     "disk.dataPartition.size": "16G",
     "hw.gpu.enabled": "yes",
     "hw.gpu.mode": "auto",
     "hw.keyboard": "yes",
     "hw.mainKeys": "no",
-    "hw.camera.back": "none",
-    "hw.camera.front": "none",
     "hw.sdCard": "no",
     "hw.audioInput": "yes",
     "fastboot.forceColdBoot": "no",
@@ -55,8 +53,14 @@ class Instance:
     height: int = 1920
     density: int = 420
     fps: int = 60
+    api: str = installer.DEFAULT_API
+    camera: bool = False
     block_ads: bool = True
     eco: bool = False
+
+    @property
+    def android(self):
+        return installer.ANDROID_VERSIONS.get(self.api, f"Android API {self.api}")
 
     @property
     def console_port(self):
@@ -97,14 +101,41 @@ def from_dict(values, **overrides):
 
 def load():
     try:
-        return [from_dict(entry) for entry in json.loads(paths.INSTANCES.read_text())]
+        instances = [from_dict(entry) for entry in json.loads(paths.INSTANCES.read_text())]
     except (OSError, ValueError):
-        pass
-    if (paths.AVD_HOME / "Androidbox.avd").is_dir():
-        instances = [Instance(id="Androidbox", name="Main", slot=0)]
+        instances = []
+    if recover(instances):
         save(instances)
-        return instances
-    return []
+    return instances
+
+
+def number(values, key, default):
+    value = values.get(key, "").strip()
+    return int(value) if value.isdigit() else default
+
+
+def recover(instances):
+    known = {instance.id for instance in instances}
+    found = False
+    for marker in sorted(paths.AVD_HOME.glob("*.ini")):
+        config = paths.AVD_HOME / f"{marker.stem}.avd" / "config.ini"
+        if marker.stem in known or not config.exists() or len(instances) >= len(CONSOLE_PORTS):
+            continue
+        values = dict(line.split("=", 1) for line in config.read_text().splitlines() if "=" in line)
+        name = values.get("avd.ini.displayname", "Android").strip() or "Android"
+        if any(instance.name == name for instance in instances):
+            name = f"{name} (recovered)"
+        api = values.get("image.sysdir.1", "").split("android-")[-1].split("\\")[0]
+        instances.append(Instance(
+            id=marker.stem, name=name, slot=free_slot(instances),
+            cores=number(values, "hw.cpu.ncore", 4), ram=number(values, "hw.ramSize", 4096),
+            width=number(values, "hw.lcd.width", 1080), height=number(values, "hw.lcd.height", 1920),
+            density=number(values, "hw.lcd.density", 420), fps=number(values, "hw.lcd.vsync", 60),
+            api=api if api in installer.ANDROID_VERSIONS else installer.DEFAULT_API,
+            camera=values.get("hw.camera.front") == "webcam0"))
+        known.add(marker.stem)
+        found = True
+    return found
 
 
 def save(instances):
@@ -142,12 +173,15 @@ def clone(source, slot):
 
 
 def delete(instances, instance):
+    (paths.AVD_HOME / f"{instance.id}.ini").unlink(missing_ok=True)
     for _ in range(20):
         shutil.rmtree(instance.folder, ignore_errors=True)
         if not instance.folder.exists():
             break
         time.sleep(0.5)
-    (paths.AVD_HOME / f"{instance.id}.ini").unlink(missing_ok=True)
+    for frames in paths.DATA.glob(f"{instance.id}-*.frame"):
+        with contextlib.suppress(OSError):
+            frames.unlink()
     instances.remove(instance)
     save(instances)
 
@@ -204,7 +238,7 @@ def write_avd(instance):
         "avd.ini.encoding=UTF-8\n"
         f"path={instance.folder}\n"
         f"path.rel=avd\\{instance.id}.avd\n"
-        f"target=android-{installer.IMAGE_API}\n"
+        f"target=android-{instance.api}\n"
     )
     config_path = instance.folder / "config.ini"
     config = {}
@@ -218,6 +252,9 @@ def write_avd(instance):
     config.update({
         "AvdId": instance.id,
         "avd.ini.displayname": instance.name,
+        "image.sysdir.1": f"{installer.image_dir(instance.api)}\\",
+        "hw.camera.front": "webcam0" if instance.camera else "none",
+        "hw.camera.back": "webcam0" if instance.camera else "none",
         "hw.cpu.ncore": str(instance.cores),
         "hw.ramSize": str(instance.ram),
         "hw.lcd.width": str(instance.width),

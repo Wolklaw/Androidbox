@@ -13,6 +13,7 @@ if (-not (Test-Path .venv)) {
     --icon "$PSScriptRoot\assets\androidbox.ico" `
     --add-data "$PSScriptRoot\assets\androidbox.ico;assets" `
     --exclude-module tkinter `
+    --collect-all sdl2dll `
     --distpath "$PSScriptRoot\dist" `
     --workpath "$PSScriptRoot\build" `
     --specpath "$PSScriptRoot\build" `

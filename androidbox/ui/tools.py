@@ -69,7 +69,7 @@ class ToolRail(QWidget):
             "game": prefs["game_controls"],
             "keyboard": editing,
             "macro": bool(controller and controller.recording_macro),
-            "record": bool(controller and controller.video),
+            "record": bool(controller and controller.recording_video),
             "eco": bool(controller and controller.instance.eco),
             "sync": prefs["sync_input"],
         }
