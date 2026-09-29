@@ -7,6 +7,10 @@
   Google Play, game controls, multiple instances, and nothing trying to sell you anything.
 </p>
 
+<p align="center">
+  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download Androidbox.exe</b></a>
+</p>
+
 ---
 
 Androidbox runs **Google's official Android Emulator**, the same engine inside Android Studio, on your
@@ -88,9 +92,12 @@ flowchart LR
 - About 4 GB of disk space for Android, plus up to 10 GB per instance
 
 **Then:**
-1. Build `Androidbox.exe` (see [Building](#building)) or run it from source.
-2. Open it and choose **Download and install**. This happens once.
-3. Press **Start Android**.
+1. Download `Androidbox.exe` from the [latest release](https://github.com/Wolklaw/Androidbox/releases/latest).
+   It's a single file, so put it anywhere.
+2. Open it. Windows may warn that the app is from an unknown publisher, because it isn't code-signed.
+   Choose **More info**, then **Run anyway**.
+3. Choose **Download and install**. This happens once.
+4. Press **Start Android**.
 
 Closing Androidbox saves and shuts down every running Android.
 
@@ -175,3 +182,7 @@ python -m venv .venv
 - **Firefox** is made by Mozilla, **uBlock Origin** by Raymond Hill and contributors, and **AdGuard DNS**
   by AdGuard. Androidbox only helps you install or use them.
 - Built with **Qt for Python (PySide6)** and **gRPC**.
+
+## License
+
+Androidbox is released under the [MIT License](LICENSE).
