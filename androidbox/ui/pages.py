@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLineEdit, QMenu, QPlainTextEdit,
                                QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
-from .. import VERSION, installer, instances, keymap, macros, profiles
+from .. import VERSION, claude, installer, instances, keymap, macros, profiles
 from .controller import plural
 from .phone import PhoneView
 from .theme import COLORS, ICONS
@@ -525,13 +525,20 @@ class InstancesPage(Page):
         fps.toggled.connect(lambda on: host.set_pref("show_fps", on))
         updates = Toggle(host.prefs["check_updates"])
         updates.toggled.connect(lambda on: host.set_pref("check_updates", on))
+        access = Toggle(host.prefs["claude_access"])
+        access.toggled.connect(lambda on: host.set_pref("claude_access", on))
         self.add(card(label("Everywhere", "Section"),
                       setting("Sync input", "Mirror taps and keys from the instance you're using to every other "
                                             "running instance. Best when they use the same display setting.", sync),
                       divider(),
                       setting("Show FPS", "Show frames per second in the corner of the screen.", fps), divider(),
                       setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub once "
-                                                   "per start whether a newer release is out.", updates)))
+                                                   "per start whether a newer release is out.", updates),
+                      divider(),
+                      setting("Let Claude Code control Android", "Lets Claude Code on this PC tap, type, take "
+                                                                  "screenshots and install apps on your running "
+                                                                  "instances to test them, through a helper "
+                                                                  "script in your Androidbox folder.", access)))
 
         shortcuts = [("F11", "Full screen"), ("Ctrl+Shift+S", "Screenshot"), ("Ctrl+Shift+R", "Record the screen"),
                      ("Ctrl+Shift+K", "Game controls on or off"), ("Ctrl+Shift+E", "Edit game controls"),

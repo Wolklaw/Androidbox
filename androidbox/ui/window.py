@@ -6,7 +6,7 @@ from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
                                QMenu, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from .. import VERSION, browser, emulator, installer, instances, keymap, macros, paths, profiles, settings, updates
+from .. import VERSION, browser, claude, emulator, installer, instances, keymap, macros, paths, profiles, settings, updates
 from . import tasks
 from .controller import Controller, plural
 from .host import ScreenActions
@@ -47,6 +47,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.setMinimumSize(980, 660)
         profiles.start()
         self.prefs = settings.load()
+        if self.prefs["claude_access"]:
+            claude.enable()
         self.instances = instances.load()
         self.controllers = {}
         self.instance_buttons = {}
@@ -379,6 +381,8 @@ class MainWindow(QMainWindow, ScreenActions):
     def set_pref(self, key, value):
         self.prefs[key] = value
         settings.save(self.prefs, key)
+        if key == "claude_access":
+            claude.enable() if value else claude.disable()
         if key == "sync_input":
             self.update_mirrors()
         self.refresh_tools()

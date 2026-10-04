@@ -6,6 +6,7 @@ LOCAL = {
     "selected": None,
     "check_updates": True,
     "skipped_version": "",
+    "claude_access": False,
 }
 
 PROFILE = {
