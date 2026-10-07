@@ -8,7 +8,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download Androidbox.exe</b></a>
+  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download Androidbox.exe</b></a><br>
+  Windows 10 or 11 · free · MIT license
 </p>
 
 ---
@@ -19,88 +20,6 @@ bundled apps and no telemetry. Everything it needs downloads straight from Googl
 stores stays in one folder you can delete.
 
 <p align="center"><img src="docs/screen.png" alt="Androidbox running Android 15" width="820"></p>
-
-## What you get
-
-**Android 15 with Google Play**, running on your GPU at 60, 90, 120, 144 or 240 FPS, with ARM apps and
-games supported. For older games that only ship 32-bit ARM code, create an instance with
-**Android 11**, which runs both 32-bit and 64-bit ARM apps.
-
-**Game controls**, saved separately for every game:
-
-| Control | What it does |
-|---|---|
-| Tap | A key or controller button taps a spot on the screen |
-| Joystick | WASD (rebindable), the D-pad or the left stick moves |
-| Aim | Shooter mode: press its key (F1) and the mouse turns the camera. The right stick aims too |
-| Look | Free look: the mouse turns the camera only while you hold its key (Alt) |
-| Fire and Scope | The left and right mouse buttons while aiming |
-| Skill | MOBA casting: hold the key, point with the mouse, release to cast |
-| Turbo | Hold the key to tap the same spot rapidly |
-| Swipe | One key performs a drag along an arrow you place, for dodges and lane changes |
-| Zoom | Ctrl and the mouse wheel pinch in and out, with no setup |
-
-Layouts export to a file, so you can share them or move them to another instance or PC.
-
-<p align="center"><img src="docs/controls.png" alt="Placing game controls on the screen" width="820"></p>
-
-**Controllers.** Xbox, PlayStation and Switch Pro controllers, 8BitDo pads and most other gamepads work
-straight away, wired or over Bluetooth. Bind their buttons and triggers like keys. Without game
-controls they navigate Android: A is Enter, B is Back, Start is Home.
-
-**Macros.** Record taps, swipes and key presses once, then play them back once or on a loop, at half,
-normal, double or four times the speed. Name a macro and give it a hotkey to fire it in the middle of a
-game.
-
-**Profiles.** A profile keeps your game control layouts, macros, instance presets and preferences
-together. Make one for yourself, one for streaming, one for the family PC, and switch from the menu at
-the top right. Save an instance's hardware as a **preset** and start new instances from it. Profiles
-export to a single file, and **sync between PCs** through any folder that OneDrive, Dropbox, Google
-Drive or Syncthing already keeps up to date: pick the folder once on each PC and your layouts, macros
-and presets follow you. There is no server and no login, and Androidbox uploads nothing itself.
-
-**Several Androids at once.** Every instance has its own apps, accounts and settings. Create, clone,
-back up to a single file, restore, open any instance in its own window, tile them side by side, and
-mirror your input to all of them at the same time.
-
-<p align="center"><img src="docs/instances.png" alt="The instance manager" width="820"></p>
-
-**No ads, two ways.**
-- **Block ads** filters ad networks inside every app and game through AdGuard DNS.
-- **Ad-free browser** installs Firefox from Mozilla, makes it the default browser and opens uBlock
-  Origin for you. One tap later, websites are ad-free, YouTube included.
-
-**Everything else you'd expect:** screenshots, screen recording with no time limit (saved in 3-minute parts), drag and drop to
-install `.apk`, `.apks` and `.xapk` files (game data included), file import, your webcam as Android's
-camera, rotate, shake, volume, GPS location, a clipboard shared with Windows, full screen, eco mode for
-idle games, an FPS counter, and a quiet check for new Androidbox releases that you can turn off.
-
-<p align="center"><img src="docs/settings.png" alt="Per-instance settings" width="820"></p>
-
-## How it works
-
-```mermaid
-flowchart LR
-    A["Androidbox window<br/>Qt"] -- "screen frames" --> B
-    B["Android Emulator<br/>headless, on your GPU"] -- "shared memory<br/>60 to 240 FPS" --> A
-    A -- "touch, keys, sensors<br/>gRPC" --> B
-    A -- "installs, settings<br/>adb" --> B
-    A -- "recording, shutdown<br/>console" --> B
-    C["dl.google.com"] -. "first run" .-> B
-```
-
-1. **First run.** Androidbox reads Google's SDK package index, downloads the emulator, adb and the
-   Android 15 system image (about 2.2 GB), checks every file's checksum, and unpacks them into
-   `%LOCALAPPDATA%\Androidbox`. The Android 11 image (about 1.4 GB) only downloads the first time you
-   start an instance that uses it.
-2. **Starting Android.** Each instance is a standard Android virtual device. The emulator runs without
-   a window of its own, uses your GPU, and resumes from a snapshot in a few seconds.
-3. **Showing it.** Androidbox asks the emulator over gRPC to draw each frame, at the size of your window,
-   straight into memory the two share, so frames arrive without being copied through a socket. Mouse,
-   keyboard and controller input go back as multi-touch and key events.
-4. **Game controls** turn keys, mouse movement and controller sticks into touches at the spots you
-   placed, so they work in any game, even ones that were never built for a keyboard.
-5. **Shutting down** saves a snapshot, so the next start picks up where you left off.
 
 ## Getting started
 
@@ -121,10 +40,113 @@ flowchart LR
 
 Closing Androidbox saves and shuts down every running Android.
 
+## Features
+
+### Android 15 with Google Play
+
+Runs on your GPU at 60, 90, 120, 144 or 240 FPS, with ARM apps and games supported. For older games
+that only ship 32-bit ARM code, create an instance with **Android 11**, which runs both 32-bit and
+64-bit ARM apps.
+
+### Game controls
+
+Saved separately for every game:
+
+| Control | What it does |
+|---|---|
+| Tap | A key or controller button taps a spot on the screen |
+| Joystick | WASD (rebindable), the D-pad or the left stick moves |
+| Aim | Shooter mode: press its key (F1) and the mouse turns the camera. The right stick aims too |
+| Look | Free look: the mouse turns the camera only while you hold its key (Alt) |
+| Fire and Scope | The left and right mouse buttons while aiming |
+| Skill | MOBA casting: hold the key, point with the mouse, release to cast |
+| Turbo | Hold the key to tap the same spot rapidly |
+| Swipe | One key performs a drag along an arrow you place, for dodges and lane changes |
+| Zoom | Ctrl and the mouse wheel pinch in and out, with no setup |
+
+Layouts export to a file, so you can share them or move them to another instance or PC.
+
+<p align="center"><img src="docs/controls.png" alt="Placing game controls on the screen" width="820"></p>
+
+### Controllers
+
+Xbox, PlayStation and Switch Pro controllers, 8BitDo pads and most other gamepads work straight away,
+wired or over Bluetooth. Bind their buttons and triggers like keys. Without game controls they navigate
+Android: A is Enter, B is Back, Start is Home.
+
+### Macros
+
+Record taps, swipes and key presses once, then play them back once or on a loop, at half, normal,
+double or four times the speed. Name a macro and give it a hotkey to fire it in the middle of a game.
+
+### Profiles and sync
+
+A profile keeps your game control layouts, macros, instance presets and preferences together. Make one
+for yourself, one for streaming, one for the family PC, and switch from the menu at the top right.
+
+- Save an instance's hardware as a **preset** and start new instances from it.
+- Profiles export to a single file.
+- Profiles **sync between PCs** through any folder that OneDrive, Dropbox, Google Drive or Syncthing
+  already keeps up to date. Pick the folder once on each PC and your layouts, macros and presets follow
+  you. There is no server and no login, and Androidbox uploads nothing itself.
+
+### Several Androids at once
+
+Every instance has its own apps, accounts and settings. Create, clone, back up to a single file,
+restore, open any instance in its own window, tile them side by side, and mirror your input to all of
+them at the same time.
+
+<p align="center"><img src="docs/instances.png" alt="The instance manager" width="820"></p>
+
+### No ads, two ways
+
+- **Block ads** filters ad networks inside every app and game through AdGuard DNS.
+- **Ad-free browser** installs Firefox from Mozilla, makes it the default browser and opens uBlock
+  Origin for you. One tap later, websites are ad-free, YouTube included.
+
+### Let Claude Code test your apps
+
+Off by default. Turn on **Let Claude Code control Android** in Settings and Androidbox writes a helper
+script to `%LOCALAPPDATA%\Androidbox\claude`. Claude Code on your PC can then take screenshots, read
+what's on screen, tap, swipe, type, install and launch apps, and read logs on your running instances.
+Turn the switch off and the helper is deleted, and it refuses to run while the switch is off.
+
+### Everything else
+
+- Screenshots, and screen recording with no time limit (saved in 3-minute parts)
+- Drag and drop to install `.apk`, `.apks` and `.xapk` files, game data included
+- File import, and a clipboard shared with Windows
+- Your webcam as Android's camera
+- Rotate, shake, volume and GPS location
+- Full screen, an FPS counter, and eco mode for idle games
+- A quiet check for new Androidbox releases that you can turn off
+
+<p align="center"><img src="docs/settings.png" alt="Per-instance settings" width="820"></p>
+
+## How it works
+
+<p align="center">
+  <img src="docs/how-it-works.png" alt="The Androidbox window gets screen frames from the Android Emulator through shared memory. It sends touch, keys and sensors over gRPC, installs and settings over adb, and recording and shutdown over the emulator console. On the first run, the emulator is downloaded from dl.google.com." width="520">
+</p>
+
+1. **First run.** Androidbox reads Google's SDK package index, downloads the emulator, adb and the
+   Android 15 system image (about 2.2 GB), checks every file's checksum, and unpacks them into
+   `%LOCALAPPDATA%\Androidbox`. The Android 11 image (about 1.4 GB) only downloads the first time you
+   start an instance that uses it.
+2. **Starting Android.** Each instance is a standard Android virtual device. The emulator runs without
+   a window of its own, uses your GPU, and resumes from a snapshot in a few seconds.
+3. **Showing it.** Androidbox asks the emulator over gRPC to draw each frame, at the size of your window,
+   straight into memory the two share, so frames arrive without being copied through a socket. Mouse,
+   keyboard and controller input go back as multi-touch and key events.
+4. **Game controls** turn keys, mouse movement and controller sticks into touches at the spots you
+   placed, so they work in any game, even ones that were never built for a keyboard.
+5. **Shutting down** saves a snapshot, so the next start picks up where you left off.
+
 ## Using it
 
-**Mouse:** left-click taps, drag swipes, the wheel scrolls, right-click is Back, middle-click is Home.
-**Keyboard:** typing goes straight to Android, and Esc is Back. **Files:** drop them on the screen.
+- **Mouse:** left-click taps, drag swipes, the wheel scrolls, right-click is Back, middle-click is Home.
+- **Keyboard:** typing goes straight to Android, and Esc is Back.
+- **Files:** drop them on the screen.
 
 | Shortcut | Action |
 |---|---|
@@ -138,19 +160,24 @@ Closing Androidbox saves and shuts down every running Android.
 | Ctrl+Shift+W | Open in its own window |
 | Ctrl+wheel | Pinch to zoom |
 
-**Setting up a game:** open the game, press Ctrl+Shift+E, click where a button is and press the key you
-want for it. **Add control** at the top adds a joystick, aim, look, fire, scope, skill, turbo or swipe
-control. Drag controls to move them (drag the tip of a swipe arrow to aim it), scroll over one to
-resize it, and right-click to remove it. Press Done, and the layout is saved for that game.
+### Set up a game
 
-**Macros:** press Ctrl+Shift+M, play, and press it again. On the Macros page you can rename a macro,
-change its speed and click the hotkey box to give it a shortcut such as Ctrl+1. Macros belong to your
-profile and remember the display they were recorded on, so they only play on instances with the same one.
+Open the game, press Ctrl+Shift+E, click where a button is and press the key you want for it.
+**Add control** at the top adds a joystick, aim, look, fire, scope, skill, turbo or swipe control. Drag
+controls to move them (drag the tip of a swipe arrow to aim it), scroll over one to resize it, and
+right-click to remove it. Press Done, and the layout is saved for that game.
 
-**Profiles and sync:** open the profile menu at the top right, or Manage profiles for the full page.
-To share a profile between PCs, choose **Choose a folder** under Sync between PCs, on each PC, and pick
-a folder your cloud storage syncs. Instances, apps and accounts inside Android are not part of a profile,
-use Back up for those.
+### Record a macro
+
+Press Ctrl+Shift+M, play, and press it again. On the Macros page you can rename a macro, change its
+speed and click the hotkey box to give it a shortcut such as Ctrl+1. Macros belong to your profile and
+remember the display they were recorded on, so they only play on instances with the same one.
+
+### Share a profile between PCs
+
+Open the profile menu at the top right, or Manage profiles for the full page. Choose **Choose a folder**
+under Sync between PCs, on each PC, and pick a folder your cloud storage syncs. Instances, apps and
+accounts inside Android are not part of a profile, use Back up for those.
 
 ## Tips
 
@@ -167,31 +194,66 @@ use Back up for those.
 
 ## FAQ
 
-**Is it really ad-free?** Androidbox itself has no ads and never will. Inside Android, Block ads stops
-ad networks in apps and games, and the ad-free browser handles websites and YouTube. Ads that apps
-serve from their own servers can't be filtered by any DNS blocker.
+<details>
+<summary><b>Is it really ad-free?</b></summary>
 
-**Does it support root?** No. The Google Play images can't be rooted. The upside is that banking apps
-and games with root detection keep working.
+Androidbox itself has no ads and never will. Inside Android, Block ads stops ad networks in apps and
+games, and the ad-free browser handles websites and YouTube. Ads that apps serve from their own servers
+can't be filtered by any DNS blocker.
 
-**Do I need an account?** No. A profile is just a name on your PC, with no password and no sign-in, and
-nothing about it leaves your PC unless you pick a sync folder. Anyone who can open that folder can read
-the profile, so don't share it with people you wouldn't hand your game layouts to.
+</details>
 
-**Where is my data, and how do I remove it?** Everything lives in `%LOCALAPPDATA%\Androidbox`. Delete
-that folder, and Androidbox with all its instances is gone. If you turned on sync, a copy of your
-profiles also sits in the folder you chose, in `Androidbox Profiles`.
+<details>
+<summary><b>Does it support root?</b></summary>
 
-**Can I run it without Google Play?** Yes. Skip signing in and install apps from `.apk` files.
+No. The Google Play images can't be rooted. The upside is that banking apps and games with root
+detection keep working.
 
-**Does Pokémon GO work?** No, and it won't. Niantic blocks emulators on purpose: the game checks
-Play Integrity and its own anti-cheat, and refuses to run on any emulator, BlueStacks included.
-Getting around that means breaking their terms of service and risking a ban, so Androidbox doesn't try.
-The GPS location tool is meant for testing apps and games that allow it.
+</details>
 
-**Why Android 15 and 11, and not the newest Android?** Google publishes Play Store images for new
-versions long before they are stable enough for games. Android 15 is the newest one that runs games
-reliably, and Android 11 is the last one that runs 32-bit ARM apps.
+<details>
+<summary><b>Do I need an account?</b></summary>
+
+No. A profile is just a name on your PC, with no password and no sign-in, and nothing about it leaves
+your PC unless you pick a sync folder. Anyone who can open that folder can read the profile, so don't
+share it with people you wouldn't hand your game layouts to.
+
+</details>
+
+<details>
+<summary><b>Where is my data, and how do I remove it?</b></summary>
+
+Everything lives in `%LOCALAPPDATA%\Androidbox`. Delete that folder, and Androidbox with all its
+instances is gone. If you turned on sync, a copy of your profiles also sits in the folder you chose, in
+`Androidbox Profiles`.
+
+</details>
+
+<details>
+<summary><b>Can I run it without Google Play?</b></summary>
+
+Yes. Skip signing in and install apps from `.apk` files.
+
+</details>
+
+<details>
+<summary><b>Does Pokémon GO work?</b></summary>
+
+No, and it won't. Niantic blocks emulators on purpose: the game checks Play Integrity and its own
+anti-cheat, and refuses to run on any emulator, BlueStacks included. Getting around that means breaking
+their terms of service and risking a ban, so Androidbox doesn't try. The GPS location tool is meant for
+testing apps and games that allow it.
+
+</details>
+
+<details>
+<summary><b>Why Android 15 and 11, and not the newest Android?</b></summary>
+
+Google publishes Play Store images for new versions long before they are stable enough for games.
+Android 15 is the newest one that runs games reliably, and Android 11 is the last one that runs 32-bit
+ARM apps.
+
+</details>
 
 ## Building
 
@@ -208,18 +270,23 @@ python -m venv .venv
 .venv\Scripts\pythonw Androidbox.pyw
 ```
 
-| Path | Role |
-|---|---|
-| `androidbox/installer.py` | Downloads and verifies the emulator, adb and the system image |
-| `androidbox/instances.py` | Instances, ports, virtual hardware, backup and restore |
-| `androidbox/emulator.py` | Starts and stops the emulator, adb and console commands |
-| `androidbox/bridge.py` | The gRPC link: screen stream, touch and key input, sensors |
-| `androidbox/keymap.py`, `gamepad.py` | Game controls and controller input |
-| `androidbox/profiles.py`, `settings.py` | Profiles, presets and the sync folder, plus preferences |
-| `androidbox/macros.py`, `browser.py` | Macros and the ad-free browser |
-| `androidbox/updates.py` | Asks GitHub whether a newer release is out |
-| `androidbox/ui/` | The windows: `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws Android |
-| `androidbox/proto/` | Bindings generated from the emulator's gRPC definition |
+<details>
+<summary><b>What's in the source</b></summary>
+
+- `androidbox/installer.py`: downloads and verifies the emulator, adb and the system image
+- `androidbox/instances.py`: instances, ports, virtual hardware, backup and restore
+- `androidbox/emulator.py`: starts and stops the emulator, adb and console commands
+- `androidbox/bridge.py`: the gRPC link, with the screen stream, touch and key input, and sensors
+- `androidbox/keymap.py`, `gamepad.py`: game controls and controller input
+- `androidbox/profiles.py`, `settings.py`: profiles, presets and the sync folder, plus preferences
+- `androidbox/macros.py`, `browser.py`: macros and the ad-free browser
+- `androidbox/claude.py`: the Claude Code helper script
+- `androidbox/updates.py`: asks GitHub whether a newer release is out
+- `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
+  Android
+- `androidbox/proto/`: bindings generated from the emulator's gRPC definition
+
+</details>
 
 ## Credits
 
