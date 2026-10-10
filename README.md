@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download Androidbox.exe</b></a><br>
+  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download the Androidbox installer</b></a><br>
   Windows 10 or 11 · free · MIT license
 </p>
 
@@ -31,14 +31,18 @@ stores stays in one folder you can delete.
 - About 4 GB of disk space for Android, plus up to 10 GB per instance
 
 **Then:**
-1. Download `Androidbox.exe` from the [latest release](https://github.com/Wolklaw/Androidbox/releases/latest).
-   It's a single file, so put it anywhere.
-2. Open it. Windows may warn that the app is from an unknown publisher, because it isn't code-signed.
+1. Download `Androidbox-Setup-<version>.exe` from the
+   [latest release](https://github.com/Wolklaw/Androidbox/releases/latest).
+2. Run it. Windows may warn that the app is from an unknown publisher, because it isn't code-signed.
    Choose **More info**, then **Run anyway**.
-3. Choose **Download and install**. This happens once.
-4. Press **Start Android**.
+3. Follow the setup wizard. By default it installs for your account only, so it doesn't need
+   administrator rights, and it adds Androidbox to the Start menu. It can also install for everyone on
+   the PC if you pick that.
+4. Open Androidbox and choose **Download and install**. This happens once.
+5. Press **Start Android**.
 
-Closing Androidbox saves and shuts down every running Android.
+Closing Androidbox saves and shuts down every running Android. To update, run the newer installer over
+the old one. Your instances and settings stay where they are.
 
 ## Features
 
@@ -223,9 +227,10 @@ share it with people you wouldn't hand your game layouts to.
 <details>
 <summary><b>Where is my data, and how do I remove it?</b></summary>
 
-Everything lives in `%LOCALAPPDATA%\Androidbox`. Delete that folder, and Androidbox with all its
-instances is gone. If you turned on sync, a copy of your profiles also sits in the folder you chose, in
-`Androidbox Profiles`.
+Everything lives in `%LOCALAPPDATA%\Androidbox`, apart from the program itself. Uninstall Androidbox from
+**Settings > Apps** and it asks whether to delete that folder too, with all its instances. It keeps the
+folder unless you say yes, because the Android images take a while to download again. If you turned on
+sync, a copy of your profiles also sits in the folder you chose, in `Androidbox Profiles`.
 
 </details>
 
@@ -261,8 +266,10 @@ ARM apps.
 .\build.ps1
 ```
 
-This creates a virtual environment, installs the packages in `requirements.txt` plus PyInstaller, and
-writes a single `dist\Androidbox.exe`. To run from source instead:
+This creates a virtual environment, installs the packages in `requirements.txt` plus PyInstaller, bundles
+the app with PyInstaller, and wraps it in a setup wizard with [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`). The installer lands in `dist\Androidbox-Setup-<version>.exe`, and
+the version comes from `androidbox/__init__.py`. To run from source instead:
 
 ```powershell
 python -m venv .venv
@@ -285,6 +292,7 @@ python -m venv .venv
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
   Android
 - `androidbox/proto/`: bindings generated from the emulator's gRPC definition
+- `build.ps1`, `setup.iss`: build the app and its Windows installer
 
 </details>
 
