@@ -1,3 +1,4 @@
+import contextlib
 import ctypes
 import os
 import shutil
@@ -34,6 +35,19 @@ def run(args, timeout=30):
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
+@contextlib.contextmanager
+def without_crash_dialogs():
+    # Child processes inherit the error mode: a qemu crash then ends the process instead of
+    # leaving a "Fail Fast Exception" box that nobody can see waiting behind the windows
+    kernel32 = ctypes.windll.kernel32
+    previous = kernel32.SetErrorMode(0)
+    kernel32.SetErrorMode(previous | 0x0003)  # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX
+    try:
+        yield
+    finally:
+        kernel32.SetErrorMode(previous)
+
+
 def hardware_acceleration():
     code, output = run([str(paths.EMULATOR), "-accel-check"])
     lines = output.splitlines()
@@ -63,7 +77,7 @@ class Emulator:
         self.quick_boot = (self.instance.folder / "snapshots" / "default_boot").exists() and not (wipe or fresh)
         self.started = time.monotonic()
         paths.LOGS.mkdir(parents=True, exist_ok=True)
-        with open(self.instance.log, "w") as log:
+        with open(self.instance.log, "w") as log, without_crash_dialogs():
             self.process = subprocess.Popen(args, env=environment(), stdout=log, stderr=subprocess.STDOUT,
                                             creationflags=subprocess.CREATE_NO_WINDOW)
 
@@ -76,8 +90,15 @@ class Emulator:
         except OSError:
             return False
 
+    def locked(self):
+        # A crashed qemu never removes its lock, so only a lock whose owner is still alive counts
+        if not self.lock.exists():
+            return False
+        pid = self.qemu_pid()
+        return pid is None or process_alive(pid)
+
     def fully_stopped(self):
-        return not self.running() and not self.lock.exists()
+        return not self.running() and not self.locked()
 
     def crashed(self):
         return self.process is not None and self.process.poll() not in (None, 0)
