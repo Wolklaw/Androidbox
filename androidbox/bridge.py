@@ -15,6 +15,16 @@ KEYUP = pb.KeyboardEvent.keyup
 KEYPRESS = pb.KeyboardEvent.keypress
 
 
+def booted(port, token):
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+            status = rpc.EmulatorControllerStub(channel).getStatus(
+                empty_pb2.Empty(), metadata=[("authorization", f"Bearer {token}")], timeout=3)
+    except grpc.RpcError:
+        return False
+    return status.booted
+
+
 class Bridge:
     def __init__(self, port, token, frames=None):
         self.channel = grpc.insecure_channel(f"127.0.0.1:{port}",

@@ -9,7 +9,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from . import instances, paths
+from . import bridge, instances, paths
 
 AD_BLOCKING_DNS = "dns.adguard-dns.com"
 QUICK_BOOT_LIMIT = 45
@@ -105,7 +105,14 @@ class Emulator:
 
     def booted(self):
         code, output = self.adb("shell", "getprop", "sys.boot_completed", timeout=5)
-        return code == 0 and output == "1"
+        if code == 0 and output == "1":
+            return True
+        if "unauthorized" in output:
+            # adb refuses a guest that is up, and its screen is where the prompt to allow it shows,
+            # so ask the emulator itself instead of waiting for adb forever
+            token = self.grpc_token()
+            return bool(token) and bridge.booted(self.instance.grpc_port, token)
+        return False
 
     def stuck(self):
         return self.quick_boot and time.monotonic() - self.started > QUICK_BOOT_LIMIT
