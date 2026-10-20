@@ -14,7 +14,7 @@ STABLE = "channel-0"
 IMAGE_TAG = "google_apis_playstore"
 IMAGE_ABI = "x86_64"
 IMAGE_REPOSITORY = f"{REPOSITORY}sys-img/{IMAGE_TAG}/"
-ANDROID_VERSIONS = {"35": "Android 15", "30": "Android 11"}
+ANDROID_VERSIONS = {"35": "Android 15", "36": "Android 16", "30": "Android 11"}
 DEFAULT_API = "35"
 IMAGE_NAME = ANDROID_VERSIONS[DEFAULT_API]
 

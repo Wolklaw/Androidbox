@@ -12,6 +12,9 @@ from pathlib import Path
 from . import bridge, instances, paths
 
 AD_BLOCKING_DNS = "dns.adguard-dns.com"
+# Tools like Android Studio and Godot restart the shared adb server on 5037 whenever they like, which drops
+# every running instance, so Androidbox keeps its own
+ADB_SERVER_PORT = "5137"
 QUICK_BOOT_LIMIT = 45
 APP_PACKAGES = {".apk", ".apks", ".xapk", ".apkm"}
 
@@ -23,6 +26,7 @@ def environment():
         "ANDROID_SDK_ROOT": str(paths.SDK),
         "ANDROID_USER_HOME": str(paths.DATA),
         "ANDROID_AVD_HOME": str(paths.AVD_HOME),
+        "ANDROID_ADB_SERVER_PORT": ADB_SERVER_PORT,
     }
 
 
@@ -67,9 +71,11 @@ class Emulator:
 
     def start(self, wipe=False, fresh=False):
         fresh = instances.write_avd(self.instance) or fresh
+        # The emulator leaves dynamic GLES off by default, which caps Android 11 at OpenGL ES 2.0 and
+        # makes the Play Store hide every game that needs ES 3, BitLife among them
         args = [str(paths.EMULATOR), "-avd", self.instance.id, "-port", str(self.instance.console_port),
                 "-grpc", str(self.instance.grpc_port), "-grpc-use-token", "-no-window", "-gpu", "host",
-                "-no-boot-anim", "-no-metrics"]
+                "-feature", "GLESDynamicVersion", "-no-boot-anim", "-no-metrics"]
         if wipe:
             args.append("-wipe-data")
         if fresh:

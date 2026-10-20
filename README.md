@@ -50,7 +50,7 @@ the old one. Your instances and settings stay where they are.
 
 Runs on your GPU at 60, 90, 120, 144 or 240 FPS, with ARM apps and games supported. For older games
 that only ship 32-bit ARM code, create an instance with **Android 11**, which runs both 32-bit and
-64-bit ARM apps.
+64-bit ARM apps. **Android 16** is also available for apps that need it.
 
 ### Game controls
 
@@ -252,11 +252,21 @@ testing apps and games that allow it.
 </details>
 
 <details>
-<summary><b>Why Android 15 and 11, and not the newest Android?</b></summary>
+<summary><b>Why Android 15 by default, and not the newest Android?</b></summary>
 
 Google publishes Play Store images for new versions long before they are stable enough for games.
-Android 15 is the newest one that runs games reliably, and Android 11 is the last one that runs 32-bit
-ARM apps.
+Android 15 is the default because it runs games reliably, Android 16 is there for apps that need it,
+and Android 11 is the last one that runs 32-bit ARM apps.
+
+</details>
+
+<details>
+<summary><b>Why does an ARM game crash on every Android version?</b></summary>
+
+On a PC, Android runs ARM-only games through Google's ARM translator. Games that catch their own memory
+faults, as some Unity games do, can crash inside it, because the translator can't hand a fault back to
+the game when it happens during one of its fast memory copies. This happens in every Android version
+Google ships for PCs, from 11 to 17, so no Androidbox setting changes it.
 
 </details>
 

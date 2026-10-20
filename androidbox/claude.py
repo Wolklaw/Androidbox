@@ -39,6 +39,7 @@ from pathlib import Path
 
 HOME = Path(os.environ["LOCALAPPDATA"]) / "Androidbox"
 ADB = HOME / "sdk" / "platform-tools" / "adb.exe"
+ENVIRONMENT = {**os.environ, "ANDROID_ADB_SERVER_PORT": "{ADB_SERVER_PORT}"}
 CONSOLE_PORTS = {CONSOLE_PORTS}
 KEYS = {"BACK": "KEYCODE_BACK", "HOME": "KEYCODE_HOME", "ENTER": "KEYCODE_ENTER", "MENU": "KEYCODE_MENU",
         "RECENTS": "KEYCODE_APP_SWITCH", "POWER": "KEYCODE_POWER", "DELETE": "KEYCODE_DEL"}
@@ -60,14 +61,14 @@ def allowed():
 
 
 def adb(serial, *args, binary=False, check=True):
-    result = subprocess.run([str(ADB), "-s", serial, *args], capture_output=True, timeout=600)
+    result = subprocess.run([str(ADB), "-s", serial, *args], capture_output=True, timeout=600, env=ENVIRONMENT)
     if check and result.returncode:
         fail((result.stdout + result.stderr).decode(errors="replace").strip() or "adb failed")
     return result.stdout if binary else result.stdout.decode(errors="replace")
 
 
 def online():
-    out = subprocess.run([str(ADB), "devices"], capture_output=True, text=True, timeout=30).stdout
+    out = subprocess.run([str(ADB), "devices"], capture_output=True, text=True, timeout=30, env=ENVIRONMENT).stdout
     return {line.split()[0] for line in out.splitlines()[1:] if line.strip().endswith("device")}
 
 
@@ -167,9 +168,10 @@ main()
 
 
 def enable():
-    from . import instances
+    from . import emulator, instances
     FOLDER.mkdir(parents=True, exist_ok=True)
-    TOOL.write_text(TOOL_TEXT.replace("{CONSOLE_PORTS}", repr(list(instances.CONSOLE_PORTS))), encoding="utf-8")
+    TOOL.write_text(TOOL_TEXT.replace("{CONSOLE_PORTS}", repr(list(instances.CONSOLE_PORTS)))
+                    .replace("{ADB_SERVER_PORT}", emulator.ADB_SERVER_PORT), encoding="utf-8")
     GUIDE.write_text(GUIDE_TEXT.format(tool=TOOL), encoding="utf-8")
 
 
