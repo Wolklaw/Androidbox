@@ -46,11 +46,11 @@ the old one. Your instances and settings stay where they are.
 
 ## Features
 
-### Android 15 with Google Play
+### Android 16 with Google Play
 
 Runs on your GPU at 60, 90, 120, 144 or 240 FPS, with ARM apps and games supported. For older games
 that only ship 32-bit ARM code, create an instance with **Android 11**, which runs both 32-bit and
-64-bit ARM apps. **Android 16** is also available for apps that need it.
+64-bit ARM apps.
 
 ### Game controls
 
@@ -134,7 +134,7 @@ Turn the switch off and the helper is deleted, and it refuses to run while the s
 </p>
 
 1. **First run.** Androidbox reads Google's SDK package index, downloads the emulator, adb and the
-   Android 15 system image (about 2.2 GB), checks every file's checksum, and unpacks them into
+   Android 16 system image (about 1.9 GB), checks every file's checksum, and unpacks them into
    `%LOCALAPPDATA%\Androidbox`. The Android 11 image (about 1.4 GB) only downloads the first time you
    start an instance that uses it.
 2. **Starting Android.** Each instance is a standard Android virtual device. The emulator runs without
@@ -252,21 +252,21 @@ testing apps and games that allow it.
 </details>
 
 <details>
-<summary><b>Why Android 15 by default, and not the newest Android?</b></summary>
+<summary><b>Why Android 16, and not the newest Android?</b></summary>
 
 Google publishes Play Store images for new versions long before they are stable enough for games.
-Android 15 is the default because it runs games reliably, Android 16 is there for apps that need it,
-and Android 11 is the last one that runs 32-bit ARM apps.
+Android 16 is the newest stable one, and its ARM translator runs games that crash on Android 15, such
+as BitLife. Android 11 stays available because it's the last one that runs 32-bit ARM apps.
 
 </details>
 
 <details>
-<summary><b>Why does an ARM game crash on every Android version?</b></summary>
+<summary><b>An ARM game crashes on my Android 15 instance</b></summary>
 
-On a PC, Android runs ARM-only games through Google's ARM translator. Games that catch their own memory
-faults, as some Unity games do, can crash inside it, because the translator can't hand a fault back to
-the game when it happens during one of its fast memory copies. This happens in every Android version
-Google ships for PCs, from 11 to 17, so no Androidbox setting changes it.
+On a PC, Android runs ARM-only games through Google's ARM translator, and the one in Android 15 crashes
+some Unity games a few seconds after they start. Create an Android 16 instance and install the game
+there. Apps and accounts don't carry over between Android versions, so you sign in to Google Play
+again on the new instance.
 
 </details>
 

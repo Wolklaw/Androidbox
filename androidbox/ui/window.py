@@ -624,8 +624,7 @@ class MainWindow(QMainWindow, ScreenActions):
         for preset, (width, height, _) in instances.RESOLUTIONS.items():
             display.addItem(f"{preset}  ·  {width}×{height}", preset)
         android = QComboBox()
-        android.addItem("Android 15 (recommended)", "35")
-        android.addItem("Android 16", "36")
+        android.addItem("Android 16 (recommended)", "36")
         android.addItem("Android 11 (runs older 32-bit games)", "30")
         modal.add(label("Name", "Section"))
         modal.add(name)

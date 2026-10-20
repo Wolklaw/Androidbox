@@ -14,8 +14,9 @@ STABLE = "channel-0"
 IMAGE_TAG = "google_apis_playstore"
 IMAGE_ABI = "x86_64"
 IMAGE_REPOSITORY = f"{REPOSITORY}sys-img/{IMAGE_TAG}/"
-ANDROID_VERSIONS = {"35": "Android 15", "36": "Android 16", "30": "Android 11"}
-DEFAULT_API = "35"
+# Android 15 stays known so existing instances keep running, but new instances get 16 or 11
+ANDROID_VERSIONS = {"36": "Android 16", "35": "Android 15", "30": "Android 11"}
+DEFAULT_API = "36"
 IMAGE_NAME = ANDROID_VERSIONS[DEFAULT_API]
 
 
@@ -45,7 +46,9 @@ class Package:
 
 
 def is_installed():
-    return all((paths.SDK / folder).is_dir() for folder in REQUIRED)
+    # Any Android image will do: an instance whose image is missing downloads it when it starts,
+    # so updating Androidbox never blocks existing instances behind a new default image
+    return all((paths.SDK / folder).is_dir() for folder in REQUIRED[:2]) and any(map(image_installed, ANDROID_VERSIONS))
 
 
 def resolve(api=DEFAULT_API, tools=True):
