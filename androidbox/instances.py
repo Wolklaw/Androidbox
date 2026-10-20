@@ -176,8 +176,15 @@ def clone(source, slot):
     return copy
 
 
-def delete(instances, instance):
+def forget(instances, instance):
+    # Drop it from the list before touching its files, so a folder that can't be removed yet
+    # never leaves a half-deleted instance behind
     (paths.AVD_HOME / f"{instance.id}.ini").unlink(missing_ok=True)
+    instances[:] = [kept for kept in instances if kept.id != instance.id]
+    save(instances)
+
+
+def erase(instance):
     for _ in range(20):
         shutil.rmtree(instance.folder, ignore_errors=True)
         if not instance.folder.exists():
@@ -186,8 +193,6 @@ def delete(instances, instance):
     for frames in paths.DATA.glob(f"{instance.id}-*.frame"):
         with contextlib.suppress(OSError):
             frames.unlink()
-    instances.remove(instance)
-    save(instances)
 
 
 def backup(instance, file, progress):

@@ -53,6 +53,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.controllers = {}
         self.instance_buttons = {}
         self.popouts = {}
+        self.deleting = set()
         self.current = None
         self.page = "instances"
         self.closing = False
@@ -688,15 +689,26 @@ class MainWindow(QMainWindow, ScreenActions):
         instance = controller.instance
 
         def delete():
-            def removed(_=None):
+            # Stopping can take a while, and a second click used to start a second delete
+            if instance.id in self.deleting:
+                return
+            self.deleting.add(instance.id)
+
+            def stopped():
+                instances.forget(self.instances, instance)
                 self.remove_controller(controller)
                 self.select(None)
+                self.run(lambda: instances.erase(instance), erased, erased)
+
+            def erased(_=None):
+                self.deleting.discard(instance.id)
                 self.toast(f"Deleted {instance.name}", "good")
 
             popout = self.popouts.get(instance.id)
             if popout:
                 popout.close()
-            controller.stop(then=lambda: self.run(lambda: instances.delete(self.instances, instance), removed))
+            self.toast(f"Deleting {instance.name}…")
+            controller.stop(then=stopped)
 
         confirm(self.dialog_parent(), f"Delete {instance.name}?", "This removes the instance with all of its apps "
                 "and data. This can't be undone.", "Delete", delete, danger=True)
