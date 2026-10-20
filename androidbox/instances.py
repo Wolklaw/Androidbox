@@ -1,6 +1,8 @@
 import contextlib
 import json
+import os
 import shutil
+import stat
 import time
 import uuid
 import zipfile
@@ -184,9 +186,17 @@ def forget(instances, instance):
     save(instances)
 
 
+def writable_then_retry(remove, path, error):
+    # The emulator marks some files read-only (pstore.bin), which Windows refuses to delete
+    with contextlib.suppress(OSError):
+        os.chmod(path, stat.S_IWRITE)
+        remove(path)
+
+
 def erase(instance):
     for _ in range(20):
-        shutil.rmtree(instance.folder, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            shutil.rmtree(instance.folder, onexc=writable_then_retry)
         if not instance.folder.exists():
             break
         time.sleep(0.5)
