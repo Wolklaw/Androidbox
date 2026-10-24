@@ -54,6 +54,10 @@ ICONS = {
     "popout": "",
     "person": "",
     "chevron": "",
+    "mute": "",
+    "pin": "",
+    "download": "",
+    "library": "",
 }
 
 
@@ -176,7 +180,7 @@ def stylesheet():
         min-height: 40px;
         padding: 0 24px;
     }}
-    QLineEdit, QComboBox {{
+    QLineEdit, QComboBox, QAbstractSpinBox {{
         background: {c["input"]};
         border: 1px solid {c["line"]};
         border-radius: 8px;
@@ -186,8 +190,26 @@ def stylesheet():
         selection-background-color: {c["accent"]};
         selection-color: {c["on_accent"]};
     }}
-    QLineEdit:focus, QComboBox:focus {{
+    QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus {{
         border: 1px solid {c["accent"]};
+    }}
+    QListWidget {{
+        background: {c["input"]};
+        border: 1px solid {c["line"]};
+        border-radius: 8px;
+        padding: 4px;
+        outline: none;
+    }}
+    QListWidget::item {{
+        padding: 7px 10px;
+        border-radius: 6px;
+    }}
+    QListWidget::item:hover {{
+        background: {c["hover"]};
+    }}
+    QListWidget::item:selected {{
+        background: {c["selected"]};
+        color: {c["bright"]};
     }}
     QComboBox::drop-down {{
         border: none;

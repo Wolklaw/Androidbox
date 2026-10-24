@@ -9,7 +9,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from . import bridge, instances, paths
+from . import bridge, instances, paths, system
 
 AD_BLOCKING_DNS = "dns.adguard-dns.com"
 # Tools like Android Studio and Godot restart the shared adb server on 5037 whenever they like, which drops
@@ -74,7 +74,7 @@ class Emulator:
         # The emulator leaves dynamic GLES off by default, which caps Android 11 at OpenGL ES 2.0 and
         # makes the Play Store hide every game that needs ES 3, BitLife among them
         args = [str(paths.EMULATOR), "-avd", self.instance.id, "-port", str(self.instance.console_port),
-                "-grpc", str(self.instance.grpc_port), "-grpc-use-token", "-no-window", "-gpu", "host",
+                "-grpc", str(self.instance.grpc_port), "-grpc-use-token", "-no-window", "-gpu", self.instance.gpu_mode,
                 "-feature", "GLESDynamicVersion", "-no-boot-anim", "-no-metrics"]
         if wipe:
             args.append("-wipe-data")
@@ -219,6 +219,53 @@ class Emulator:
     def set_frame_rate(self, fps):
         self.adb("shell", f"settings put system peak_refresh_rate {fps}.0"
                           f" && settings put system min_refresh_rate {fps}.0")
+
+    def launch(self, package):
+        self.adb("shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", timeout=20)
+
+    def apps(self):
+        code, output = self.adb("shell", "pm", "list", "packages", "-3", timeout=20)
+        if code != 0:
+            return []
+        lines = [line for line in output.splitlines() if line.startswith("package:")]
+        return sorted(line.removeprefix("package:").strip() for line in lines)
+
+    def uninstall(self, package):
+        code, output = self.adb("uninstall", package, timeout=120)
+        return code == 0 and "Success" in output
+
+    def music_muted(self):
+        code, output = self.adb("shell", "dumpsys audio | grep -A1 'STREAM_MUSIC:'", timeout=10)
+        lines = [line.strip() for line in output.splitlines()]
+        if code != 0 or "- STREAM_MUSIC:" not in lines:
+            return None
+        return lines[lines.index("- STREAM_MUSIC:") + 1] == "Muted: true"
+
+    def set_music_muted(self, muted):
+        # Android ignores volume changes from adb on this image, but its mute key toggles the stream games play on
+        if bool(self.music_muted()) != muted:
+            self.adb("shell", "input", "keyevent", "KEYCODE_VOLUME_MUTE", timeout=10)
+
+    def listing(self, folder):
+        quoted = "'" + folder.replace("'", "'\\''") + "'"
+        code, output = self.adb("shell", f"ls -1p {quoted}", timeout=15)
+        if code != 0:
+            return None
+        names = [line.strip() for line in output.splitlines() if line.strip() and "Permission denied" not in line]
+        return sorted(names, key=lambda name: (not name.endswith("/"), name.lower()))
+
+    def pull(self, remote, destination):
+        code, output = self.adb("pull", remote, str(destination), timeout=3600)
+        return code == 0, last_line(output)
+
+    def usage(self):
+        # The emulator's own process: processor time used so far (seconds) and memory held (bytes)
+        pid = self.qemu_pid()
+        if not pid:
+            return None
+        seconds = system.process_times(pid)
+        memory = system.process_memory(pid)
+        return None if seconds is None or memory is None else (time.monotonic(), seconds, memory)
 
     def foreground_app(self):
         code, output = self.adb("shell", "dumpsys window | grep mCurrentFocus", timeout=5)

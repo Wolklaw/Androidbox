@@ -326,8 +326,9 @@ class Toast(QLabel):
 class Modal(QWidget):
     closed = Signal()
 
-    def __init__(self, parent, title, body=None, width=440):
+    def __init__(self, parent, title, body=None, width=440, dismissable=True):
         super().__init__(parent)
+        self.dismissable = dismissable
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setStyleSheet("Modal { background: rgba(0, 0, 0, 150); }")
         self.setGeometry(parent.rect())
@@ -384,11 +385,11 @@ class Modal(QWidget):
         return self
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape and self.dismissable:
             self.close_modal()
 
     def mousePressEvent(self, event):
-        if not self.card.geometry().contains(event.position().toPoint()):
+        if self.dismissable and not self.card.geometry().contains(event.position().toPoint()):
             self.close_modal()
 
     def close_modal(self):

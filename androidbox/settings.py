@@ -7,6 +7,9 @@ LOCAL = {
     "check_updates": True,
     "skipped_version": "",
     "claude_access": False,
+    "close_to_tray": False,
+    "boss_key": "",
+    "always_on_top": False,
 }
 
 PROFILE = {

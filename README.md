@@ -35,14 +35,16 @@ stores stays in one folder you can delete.
    [latest release](https://github.com/Wolklaw/Androidbox/releases/latest).
 2. Run it. Windows may warn that the app is from an unknown publisher, because it isn't code-signed.
    Choose **More info**, then **Run anyway**.
-3. Follow the setup wizard. By default it installs for your account only, so it doesn't need
-   administrator rights, and it adds Androidbox to the Start menu. It can also install for everyone on
-   the PC if you pick that.
+3. Follow the setup wizard. It installs Androidbox in `Program Files` for everyone on the PC and asks
+   Windows for permission once. No admin rights? Choose **Install for me only** on the first page and it
+   installs in your own folder instead. If Windows Hypervisor Platform is off, the wizard offers to turn
+   it on for you.
 4. Open Androidbox and choose **Download and install**. This happens once.
 5. Press **Start Android**.
 
-Closing Androidbox saves and shuts down every running Android. To update, run the newer installer over
-the old one. Your instances and settings stay where they are.
+Closing Androidbox saves and shuts down every running Android, unless you choose to keep it running in
+the tray. To update, run the newer installer over the old one. Your instances and settings stay where
+they are, and an older per-user install is replaced.
 
 ## Features
 
@@ -51,6 +53,14 @@ the old one. Your instances and settings stay where they are.
 Runs on your GPU at 60, 90, 120, 144 or 240 FPS, with ARM apps and games supported. For older games
 that only ship 32-bit ARM code, create an instance with **Android 11**, which runs both 32-bit and
 64-bit ARM apps.
+
+Each instance has its own hardware, set in its Settings:
+
+- **Processor and memory** up to what your PC has, and new instances start with a sensible share of it.
+- **Display** from six presets, or any size from 320 to 3840 pixels with your own density.
+- **Storage** of 16, 32, 64 or 128 GB, which only takes the space Android actually uses. Big games need
+  64 GB or more.
+- **Graphics**: your graphics card, Automatic, or Software when a GPU crashes the emulator.
 
 ### Game controls
 
@@ -65,23 +75,32 @@ Saved separately for every game:
 | Fire and Scope | The left and right mouse buttons while aiming |
 | Skill | MOBA casting: hold the key, point with the mouse, release to cast |
 | Turbo | Hold the key to tap the same spot rapidly |
+| Hold | Press once to hold a spot down and again to let go, for sprint and auto-run |
 | Swipe | One key performs a drag along an arrow you place, for dodges and lane changes |
+| Tilt | Keys, or the left stick, tip the device like a steering wheel, for racing games |
+| Macro | One key plays a macro you recorded, and stops it if you press it again |
 | Zoom | Ctrl and the mouse wheel pinch in and out, with no setup |
 
-Layouts export to a file, so you can share them or move them to another instance or PC.
+**Starter layouts** give a game a head start: Shooter, MOBA, Racing, Action platformer and Endless runner
+place the usual controls, and you move each one onto the game's real button. Layouts export to a file, so
+you can share them or move them to another instance or PC.
 
 <p align="center"><img src="docs/controls.png" alt="Placing game controls on the screen" width="820"></p>
 
 ### Controllers
 
 Xbox, PlayStation and Switch Pro controllers, 8BitDo pads and most other gamepads work straight away,
-wired or over Bluetooth. Bind their buttons and triggers like keys. Without game controls they navigate
-Android: A is Enter, B is Back, Start is Home.
+wired or over Bluetooth. Bind their buttons and triggers like keys. Plug in two and both work at once,
+which is handy for couch co-op. Without game controls they navigate Android: A is Enter, B is Back,
+Start is Home.
 
 ### Macros
 
-Record taps, swipes and key presses once, then play them back once or on a loop, at half, normal,
-double or four times the speed. Name a macro and give it a hotkey to fire it in the middle of a game.
+Record taps, swipes and key presses once, then play them back at half, normal, double or four times
+the speed. Repeat a macro a set number of times or until you stop it, with a wait of your choice between
+rounds, which suits idle and farming games. **Edit steps** shows each tap, swipe, hold and key press so
+you can change how long it waits or remove it. Give a macro a hotkey, and turn on **Works in any
+program** to fire it while another program has the keyboard.
 
 ### Profiles and sync
 
@@ -97,8 +116,24 @@ for yourself, one for streaming, one for the family PC, and switch from the menu
 ### Several Androids at once
 
 Every instance has its own apps, accounts and settings. Create, clone, back up to a single file,
-restore, open any instance in its own window, tile them side by side, and mirror your input to all of
-them at the same time.
+restore, start them all at once, open any instance in its own window, tile them side by side, and
+mirror your input to all of them at the same time.
+
+### Apps and games
+
+The **Apps** page lists what's installed on an instance. Open a game, give it its own frame rate that
+applies while it's in front, uninstall it, or put a shortcut to it on your desktop. A shortcut starts the
+instance if it's off and opens that game, even when Androidbox is already running.
+
+### Stays out of the way
+
+- **Tray**: keep Android running when you close the window, so idle games keep going. Quit from the
+  tray icon.
+- **Start with Windows**: Androidbox opens in the tray and starts the instances you marked to start
+  with it.
+- **Boss key**: one shortcut that works in any program hides every Androidbox window and mutes Android.
+  Press it again to bring everything back.
+- **Mute** one instance, and **keep Androidbox on top** of other windows.
 
 <p align="center"><img src="docs/instances.png" alt="The instance manager" width="820"></p>
 
@@ -119,10 +154,13 @@ Turn the switch off and the helper is deleted, and it refuses to run while the s
 
 - Screenshots, and screen recording with no time limit (saved in 3-minute parts)
 - Drag and drop to install `.apk`, `.apks` and `.xapk` files, game data included
-- File import, and a clipboard shared with Windows
+- File import and export: add files to Android, or browse its storage and save files and folders to your PC
+- A clipboard shared with Windows
 - Your webcam as Android's camera
 - Rotate, shake, volume and GPS location
-- Full screen, an FPS counter, and eco mode for idle games
+- Full screen, an FPS counter that also shows how much processor and memory the emulator uses, and eco
+  mode for idle games
+- Move everything Androidbox stores to another drive when your C: drive runs short
 - A quiet check for new Androidbox releases that you can turn off
 
 <p align="center"><img src="docs/settings.png" alt="Per-instance settings" width="820"></p>
@@ -177,6 +215,12 @@ Press Ctrl+Shift+M, play, and press it again. On the Macros page you can rename 
 speed and click the hotkey box to give it a shortcut such as Ctrl+1. Macros belong to your profile and
 remember the display they were recorded on, so they only play on instances with the same one.
 
+### Pick a hotkey that works anywhere
+
+Open **Macros**, click a macro's hotkey box and press something like Ctrl+1, then turn on **Works in any
+program**. Windows only lets a program claim a shortcut that includes Ctrl, Alt, Shift or Win, and not
+one another program already has.
+
 ### Share a profile between PCs
 
 Open the profile menu at the top right, or Manage profiles for the full page. Choose **Choose a folder**
@@ -189,7 +233,9 @@ accounts inside Android are not part of a profile, use Back up for those.
   Android ask for an update before they open. If you'd rather not sign in, install apps from `.apk`
   files and use the ad-free browser for YouTube.
 - **Games need more?** Give the instance more cores and memory in Settings, or switch it to the Tablet
-  display for landscape games.
+  display for landscape games. A game that won't install for lack of room needs more **Storage**, which
+  is chosen when an instance is created, and changing it erases that instance.
+- **Android crashes as it starts?** In Settings, set Graphics to Automatic, then Software.
 - **Idle game in the background?** Turn on eco mode for that instance.
 - **A game won't install or says the device isn't supported?** It probably ships 32-bit ARM code only.
   Create a new instance, pick Android 11, and install it there.
@@ -227,10 +273,13 @@ share it with people you wouldn't hand your game layouts to.
 <details>
 <summary><b>Where is my data, and how do I remove it?</b></summary>
 
-Everything lives in `%LOCALAPPDATA%\Androidbox`, apart from the program itself. Uninstall Androidbox from
-**Settings > Apps** and it asks whether to delete that folder too, with all its instances. It keeps the
-folder unless you say yes, because the Android images take a while to download again. If you turned on
-sync, a copy of your profiles also sits in the folder you chose, in `Androidbox Profiles`.
+Everything lives in `%LOCALAPPDATA%\Androidbox`, apart from the program itself, which is in
+`Program Files`. To keep it somewhere else, open **All instances** and use **Where Androidbox keeps its
+files**: it copies everything to a drive you pick, restarts, and then removes the old copy. Uninstall
+Androidbox from **Settings > Apps** and it asks whether to delete that folder too, with all its
+instances. It keeps the folder unless you say yes, because the Android images take a while to download
+again. If you turned on sync, a copy of your profiles also sits in the folder you chose, in
+`Androidbox Profiles`.
 
 </details>
 
@@ -279,7 +328,8 @@ again on the new instance.
 This creates a virtual environment, installs the packages in `requirements.txt` plus PyInstaller, bundles
 the app with PyInstaller, and wraps it in a setup wizard with [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 (`winget install JRSoftware.InnoSetup`). The installer lands in `dist\Androidbox-Setup-<version>.exe`, and
-the version comes from `androidbox/__init__.py`. To run from source instead:
+the version comes from `androidbox/__init__.py`. The wizard's artwork is drawn by `installer/make_art.py`,
+and the PNGs it writes are committed. To run from source instead:
 
 ```powershell
 python -m venv .venv
@@ -295,14 +345,17 @@ python -m venv .venv
 - `androidbox/emulator.py`: starts and stops the emulator, adb and console commands
 - `androidbox/bridge.py`: the gRPC link, with the screen stream, touch and key input, and sensors
 - `androidbox/keymap.py`, `gamepad.py`: game controls and controller input
-- `androidbox/profiles.py`, `settings.py`: profiles, presets and the sync folder, plus preferences
-- `androidbox/macros.py`, `browser.py`: macros and the ad-free browser
+- `androidbox/profiles.py`, `settings.py`: profiles, presets, per-game settings and the sync folder, plus
+  preferences
+- `androidbox/macros.py`, `browser.py`: macros, with their editing, and the ad-free browser
+- `androidbox/system.py`, `relocate.py`, `hotkeys.py`: what the PC has, shortcuts and Windows startup,
+  moving the files to another drive, and shortcuts that work in any program
 - `androidbox/claude.py`: the Claude Code helper script
 - `androidbox/updates.py`: asks GitHub whether a newer release is out
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
-  Android
+  Android, and `files.py` browses Android's storage
 - `androidbox/proto/`: bindings generated from the emulator's gRPC definition
-- `build.ps1`, `setup.iss`: build the app and its Windows installer
+- `build.ps1`, `setup.iss`, `installer/`: build the app and its Windows installer, and the wizard's art
 
 </details>
 

@@ -11,7 +11,8 @@ DEFAULT = "Default"
 SYNC_FOLDER = "Androidbox Profiles"
 EXTENSION = ".androidbox-profile"
 NAME_LIMIT = 32
-PRESET_FIELDS = ("cores", "ram", "width", "height", "density", "fps", "api", "camera", "block_ads", "eco")
+PRESET_FIELDS = ("cores", "ram", "width", "height", "density", "fps", "api", "camera", "block_ads", "eco", "disk",
+                 "gpu")
 
 cache = {}
 
@@ -181,6 +182,26 @@ def summary(name):
     base = folder(name)
     return (len(list((base / "keymaps").glob("*.json"))), len(list((base / "macros").glob("*.json"))),
             len(presets(name)))
+
+
+def games():
+    found = read_json(folder() / "games.json", {})
+    return found if isinstance(found, dict) else {}
+
+
+def game(package):
+    entry = games().get(package)
+    return entry if isinstance(entry, dict) else {}
+
+
+def set_game(package, **changes):
+    entry = {key: value for key, value in {**game(package), **changes}.items() if value}
+    found = games()
+    if entry:
+        found[package] = entry
+    else:
+        found.pop(package, None)
+    write_json(folder() / "games.json", found)
 
 
 def presets(name=None):

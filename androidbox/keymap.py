@@ -10,6 +10,8 @@ AIM_REACH = 0.22
 DIRECTIONS = [(0, -1), (-1, 0), (0, 1), (1, 0)]
 PAD_DIRECTIONS = ["Pad Up", "Pad Left", "Pad Down", "Pad Right"]
 SHORT_NAMES = {"Mouse Left": "LMB", "Mouse Right": "RMB"}
+# Joysticks and tilts are steered by four keys, every other kind by one
+FOUR_KEYS = ("joystick", "tilt")
 
 
 @dataclass
@@ -23,11 +25,15 @@ class Control:
     speed: float = 1.0
     x2: float = None
     y2: float = None
+    macro: str = ""
 
     def label(self):
-        if self.kind == "joystick":
-            return " ".join(self.keys)
+        if self.kind in FOUR_KEYS:
+            return " ".join(key for key in self.keys if key)
         return SHORT_NAMES.get(self.key, self.key)
+
+    def complete(self):
+        return self.kind in FOUR_KEYS or bool(self.key)
 
     def end(self):
         return (self.x if self.x2 is None else self.x2), (max(0.0, self.y - 0.2) if self.y2 is None else self.y2)
@@ -35,6 +41,8 @@ class Control:
     def describe(self):
         if self.kind == "joystick":
             return f"Joystick on {'/'.join(self.keys)}, the D-pad and the left stick"
+        if self.kind == "tilt":
+            return f"Tilt: {'/'.join(key for key in self.keys if key)} tip the device, like steering a wheel"
         if self.kind == "aim":
             return f"Aim: {self.key} locks the mouse to look around. The right stick works too"
         if self.kind == "look":
@@ -45,7 +53,51 @@ class Control:
             return f"Turbo: hold {self.key} to tap rapidly at {self.x:.0%} across, {self.y:.0%} down"
         if self.kind == "swipe":
             return f"Swipe: {self.key} drags along the arrow"
+        if self.kind == "toggle":
+            return f"Hold: {self.key} presses {self.x:.0%} across, {self.y:.0%} down and holds until you press it again"
+        if self.kind == "macro":
+            return f"Macro: {self.key} plays {self.macro or 'a macro'}, and stops it if you press it again"
         return f"Tap at {self.x:.0%} across, {self.y:.0%} down"
+
+
+def tap(x, y, key):
+    return {"kind": "tap", "x": x, "y": y, "key": key}
+
+
+def swipe(x, y, x2, y2, key):
+    return {"kind": "swipe", "x": x, "y": y, "x2": x2, "y2": y2, "key": key}
+
+
+# Starting points that match how most games of a kind lay out their screen. Move them onto the game's buttons
+TEMPLATES = {
+    "Shooter": ("Move, aim with the mouse, fire, scope, jump, reload, crouch and sprint", [
+        {"kind": "joystick", "x": 0.14, "y": 0.68},
+        {"kind": "aim", "x": 0.70, "y": 0.40, "key": "F1"},
+        tap(0.88, 0.66, "Mouse Left"), tap(0.88, 0.45, "Mouse Right"), tap(0.80, 0.82, "Space"),
+        tap(0.72, 0.60, "R"), tap(0.93, 0.84, "C"), tap(0.55, 0.62, "F"),
+        {"kind": "toggle", "x": 0.14, "y": 0.44, "key": "Shift"}]),
+    "MOBA": ("Move, attack, four skills you aim with the mouse, two spells and recall", [
+        {"kind": "joystick", "x": 0.13, "y": 0.70},
+        {"kind": "turbo", "x": 0.90, "y": 0.80, "key": "Space"},
+        {"kind": "skill", "x": 0.78, "y": 0.86, "key": "Q", "size": 0.10},
+        {"kind": "skill", "x": 0.80, "y": 0.70, "key": "W", "size": 0.10},
+        {"kind": "skill", "x": 0.90, "y": 0.60, "key": "E", "size": 0.10},
+        {"kind": "skill", "x": 0.70, "y": 0.76, "key": "R", "size": 0.10},
+        tap(0.62, 0.88, "D"), tap(0.66, 0.82, "F"), tap(0.56, 0.90, "B")]),
+    "Racing (tilt)": ("Steer by tilting the device with A and D, plus gas, brake and boost", [
+        {"kind": "tilt", "x": 0.14, "y": 0.50, "keys": ["", "A", "", "D"], "size": 0.08},
+        tap(0.88, 0.72, "W"), tap(0.80, 0.84, "S"), tap(0.92, 0.50, "Space"), tap(0.08, 0.82, "Shift")]),
+    "Action platformer": ("Move, jump and two attacks", [
+        {"kind": "joystick", "x": 0.14, "y": 0.68},
+        tap(0.88, 0.78, "Space"), tap(0.78, 0.84, "J"), tap(0.90, 0.62, "K"), tap(0.80, 0.60, "L")]),
+    "Endless runner": ("Swipe up, down, left and right with the arrow keys", [
+        swipe(0.5, 0.68, 0.5, 0.40, "Up"), swipe(0.5, 0.42, 0.5, 0.70, "Down"),
+        swipe(0.62, 0.55, 0.30, 0.55, "Left"), swipe(0.38, 0.55, 0.70, 0.55, "Right"), tap(0.5, 0.85, "Space")]),
+}
+
+
+def template(name):
+    return [Control(**values) for values in TEMPLATES[name][1]]
 
 
 def profile(package):
@@ -77,7 +129,7 @@ def import_layout(package, file):
 
 
 def save(package, controls):
-    kept = [control for control in controls if control.kind == "joystick" or control.key]
+    kept = [control for control in controls if control.complete()]
     if kept:
         profiles.write_json(profile(package), [asdict(control) for control in kept])
     else:
@@ -110,8 +162,14 @@ class Engine:
     def aim_control(self):
         return next((control for control in self.controls if control.kind in ("aim", "look")), None)
 
+    def tilt_control(self):
+        return next((control for control in self.controls if control.kind == "tilt"), None)
+
     def swipes(self, key):
         return [control for control in self.controls if control.kind == "swipe" and control.key == key]
+
+    def macros(self, key):
+        return [control for control in self.controls if control.kind == "macro" and control.key == key]
 
     def pulse(self):
         touches = []
@@ -123,9 +181,9 @@ class Engine:
 
     def handles(self, key):
         for control in self.controls:
-            if control.kind == "joystick" and (key in control.keys or key in PAD_DIRECTIONS):
+            if control.kind in FOUR_KEYS and (key in control.keys or key in PAD_DIRECTIONS):
                 return True
-            if control.kind != "joystick" and control.key == key:
+            if control.kind not in FOUR_KEYS and control.key == key:
                 return True
         return False
 
@@ -135,6 +193,9 @@ class Engine:
             identifier = self.identifier(control)
             if control.kind == "tap" and control.key == key:
                 touches.append(self.touch(identifier, control.x, control.y, down))
+            elif control.kind == "toggle" and control.key == key and down:
+                held = identifier in self.touching
+                touches.append(self.touch(identifier, control.x, control.y, not held))
             elif control.kind == "turbo" and control.key == key:
                 if down:
                     self.pressed[identifier] = {key}
@@ -145,13 +206,14 @@ class Engine:
                         touches.append(self.touch(identifier, control.x, control.y, False))
             elif control.kind == "skill" and control.key == key:
                 touches.extend(self.cast(control, down, width, height))
-            elif control.kind == "joystick" and (key in control.keys or key in PAD_DIRECTIONS):
+            elif control.kind in FOUR_KEYS and (key in control.keys or key in PAD_DIRECTIONS):
                 held = self.pressed.setdefault(identifier, set())
                 if down:
                     held.add(key)
                 else:
                     held.discard(key)
-                touches.extend(self.steer(control, width, height))
+                if control.kind == "joystick":
+                    touches.extend(self.steer(control, width, height))
         return touches
 
     def stick(self, x, y, width, height):
@@ -159,18 +221,39 @@ class Engine:
             if control.kind == "joystick":
                 self.analog[self.identifier(control)] = (x, y)
                 return self.steer(control, width, height)
+        tilt = self.tilt_control()
+        if tilt:
+            self.analog[self.identifier(tilt)] = (x, y)
         return []
 
-    def steer(self, control, width, height):
+    def direction(self, control):
+        # Where the keys, the D-pad or the stick point, as a step in each direction from -1 to 1
         identifier = self.identifier(control)
         held = self.pressed.get(identifier, set())
         dx = dy = 0.0
         for index, (step_x, step_y) in enumerate(DIRECTIONS):
-            if control.keys[index] in held or PAD_DIRECTIONS[index] in held:
+            if (control.keys[index] and control.keys[index] in held) or PAD_DIRECTIONS[index] in held:
                 dx += step_x
                 dy += step_y
         if not dx and not dy:
             dx, dy = self.analog.get(identifier, (0.0, 0.0))
+        return dx, dy
+
+    def tilt(self):
+        # How far to tip the device sideways and forward, each from -1 to 1
+        control = self.tilt_control()
+        if not control:
+            return 0.0, 0.0
+        dx, dy = self.direction(control)
+        length = math.hypot(dx, dy)
+        if length < 0.05:
+            return 0.0, 0.0
+        scale = min(length, 1.0) / length
+        return dx * scale * control.speed, dy * scale * control.speed
+
+    def steer(self, control, width, height):
+        identifier = self.identifier(control)
+        dx, dy = self.direction(control)
         active = identifier in self.touching
         length = math.hypot(dx, dy)
         if length < 0.05:

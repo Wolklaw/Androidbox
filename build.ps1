@@ -17,6 +17,14 @@ if (-not (Test-Path .venv)) {
 }
 .venv\Scripts\python.exe -m pip install --quiet --disable-pip-version-check -r requirements.txt pyinstaller
 
+# An earlier build can leave read-only folders behind, which PyInstaller can't clear by itself
+foreach ($folder in "build\Androidbox", "dist\Androidbox") {
+    if (Test-Path $folder) {
+        attrib -R $folder /S /D
+        Remove-Item -Recurse -Force $folder
+    }
+}
+
 .venv\Scripts\pyinstaller.exe "$PSScriptRoot\Androidbox.pyw" `
     --name Androidbox `
     --onedir `
@@ -31,6 +39,9 @@ if (-not (Test-Path .venv)) {
     --noconfirm `
     --clean `
     --log-level WARN
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed"
+}
 
 & $inno /Qp "/DAppVersion=$version" "$PSScriptRoot\setup.iss"
 if ($LASTEXITCODE -ne 0) {

@@ -130,6 +130,11 @@ class Bridge:
         model = self.request("getPhysicalModel", pb.PhysicalModelValue(target=pb.PhysicalModelValue.ROTATION))
         return round(model.value.data[2]) if len(model.value.data) > 2 else 0
 
+    def tilt(self, pitch, turn, base):
+        # Tips the device forward by pitch degrees and turns it in its own plane, like a steering wheel
+        self.request("setPhysicalModel", pb.PhysicalModelValue(
+            target=pb.PhysicalModelValue.ROTATION, value=pb.ParameterValue(data=[pitch, 0, base + turn])), timeout=3)
+
     def shake(self):
         for amplitude in (3.0, 0.0):
             self.request("setPhysicalModel", pb.PhysicalModelValue(

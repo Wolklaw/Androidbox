@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QImage, QKeySequence, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QWidget
 
-from .. import gamepad, keymap
+from .. import gamepad, keymap, macros
 from ..bridge import KEYDOWN, KEYUP
 from .theme import COLORS
 from .widgets import button, text_font
@@ -20,12 +20,17 @@ PAD_INTERVAL = 16
 TURBO_INTERVAL = 45
 LOOK_SPEED = 14
 PINCH_TOUCHES = (7, 8)
+TILT_DEGREES = 25.0
+TILT_STEP = 0.25
+TILT_INTERVAL = 0.016
 DIRECTION_NAMES = ["up", "left", "down", "right"]
 HINTS = {
     None: "Click to place a key. Drag to move, right-click to remove, scroll to resize.",
     "aim": "Press the key that turns shooting mode on and off. Scroll to change sensitivity.",
     "look": "Press the key to hold while looking around. Scroll to change sensitivity.",
     "turbo": "Press the key to hold for rapid taps",
+    "toggle": "Press the key that holds this spot down until you press it again",
+    "macro": "Press the key that plays the macro, and move the chip where you want it",
     "swipe": "Press the key for this swipe, and drag the arrow's tip to aim it",
 }
 
@@ -97,6 +102,49 @@ class Scroller:
             bridge.touch((SCROLL_TOUCH, *self.phone.device_point(u, v), down))
 
 
+class Tilter:
+    """Tips the virtual device to follow the tilt keys, the way a phone leans in someone's hands"""
+
+    def __init__(self, phone):
+        self.phone = phone
+        self.target = (0.0, 0.0)
+        self.current = (0.0, 0.0)
+        self.base = 0
+        self.wake = threading.Event()
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def aim(self, sideways, forward):
+        target = (max(-1.5, min(1.5, sideways)), max(-1.5, min(1.5, forward)))
+        if target != self.target:
+            self.target = target
+            self.wake.set()
+
+    def run(self):
+        while True:
+            self.wake.wait()
+            self.wake.clear()
+            while self.current != self.target:
+                bridge = self.phone.bridge
+                if not bridge:
+                    self.current = self.target
+                    break
+                if self.current == (0.0, 0.0):
+                    try:
+                        self.base = bridge.rotation()
+                    except Exception:
+                        self.base = 0
+                self.current = tuple(self.approach(now, goal) for now, goal in zip(self.current, self.target))
+                try:
+                    bridge.tilt(self.current[1] * TILT_DEGREES, -self.current[0] * TILT_DEGREES, self.base)
+                except Exception:
+                    self.current = self.target
+                time.sleep(TILT_INTERVAL)
+
+    @staticmethod
+    def approach(now, goal):
+        return goal if abs(goal - now) <= TILT_STEP else now + TILT_STEP * (1 if goal > now else -1)
+
+
 class Gestures:
     def __init__(self, phone):
         self.phone = phone
@@ -149,13 +197,24 @@ class EditBar(QFrame):
         for text, action in (("Joystick", phone.add_joystick), ("Aim (shooter mode)", phone.add_aim),
                              ("Look (hold to aim)", phone.add_look), ("Fire", phone.add_fire),
                              ("Scope", phone.add_scope), ("Skill (MOBA cast)", phone.add_skill),
-                             ("Turbo tap", phone.add_turbo), ("Swipe", phone.add_swipe)):
+                             ("Turbo tap", phone.add_turbo), ("Hold (sprint, auto-run)", phone.add_toggle),
+                             ("Swipe", phone.add_swipe), ("Tilt (steer the device)", phone.add_tilt)):
             menu.addAction(text, action)
+        self.macro_menu = menu.addMenu("Run a macro")
+        self.macro_menu.aboutToShow.connect(lambda: self.fill_macros(phone))
         add.setMenu(menu)
         layout.addWidget(add)
         layout.addWidget(button("Clear", phone.clear_controls, kind="secondary"))
         layout.addWidget(button("Done", phone.finish_editing))
         self.hide()
+
+    def fill_macros(self, phone):
+        self.macro_menu.clear()
+        saved = macros.load()
+        for macro in saved:
+            self.macro_menu.addAction(macro["name"], lambda name=macro["name"]: phone.add_macro(name))
+        if not saved:
+            self.macro_menu.addAction("No macros yet. Record one first").setEnabled(False)
 
 
 class PhoneView(QWidget):
@@ -202,6 +261,7 @@ class PhoneView(QWidget):
         self.pad_timer = QTimer(self, interval=PAD_INTERVAL, timeout=self.poll_pad)
         self.turbo_timer = QTimer(self, interval=TURBO_INTERVAL, timeout=self.pulse)
         self.gestures = Gestures(self)
+        self.tilter = Tilter(self)
         self.dragging_end = False
         self.edit_bar = EditBar(self)
         self.scroller = Scroller(self)
@@ -306,8 +366,10 @@ class PhoneView(QWidget):
         if prefs["show_fps"]:
             painter.setFont(text_font(12, strong=True))
             painter.setPen(QColor(COLORS["green"]))
+            usage = self.controller.usage if self.controller else None
+            text = f"{self.fps} FPS" + (f"  ·  CPU {usage[0]:.0f}%  ·  RAM {usage[1]:.1f} GB" if usage else "")
             painter.drawText(rect.adjusted(12, 0, 0, -10), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-                             f"{self.fps} FPS")
+                             text)
         if self.controller and (self.controller.recording_video or self.controller.recording_macro):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(COLORS["red"]))
@@ -321,13 +383,17 @@ class PhoneView(QWidget):
             selected = self.editing and index == self.selected
             color = QColor(COLORS["accent"]) if selected else QColor(255, 255, 255, 150)
             painter.setPen(QPen(color, 2 if selected else 1.2))
-            if control.kind == "joystick":
+            if control.kind in keymap.FOUR_KEYS:
                 radius = control.size * span
                 painter.setBrush(QColor(0, 0, 0, 80))
+                if control.kind == "tilt":
+                    painter.setPen(QPen(color, 2 if selected else 1.2, Qt.PenStyle.DashLine))
                 painter.drawEllipse(center, radius, radius)
                 painter.setPen(QColor("#ffffff"))
                 for step, (dx, dy) in enumerate(keymap.DIRECTIONS):
                     text = control.keys[step]
+                    if not text:
+                        continue
                     width = max(28, painter.fontMetrics().horizontalAdvance(text) + 8)
                     spot = QRectF(center.x() + dx * radius * 0.66 - width / 2, center.y() + dy * radius * 0.66 - 12,
                                   width, 24)
@@ -358,15 +424,20 @@ class PhoneView(QWidget):
                 painter.setPen(QPen(color, 2 if selected else 1.2))
             if control.kind == "swipe":
                 self.paint_arrow(painter, rect, control, color, selected)
-            if control.kind == "turbo":
+            if control.kind in ("turbo", "toggle"):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
+                if control.kind == "toggle":
+                    painter.setPen(QPen(color, 2 if selected else 1.2, Qt.PenStyle.DashLine))
                 painter.drawEllipse(center, 22, 22)
                 painter.setPen(QPen(color, 2 if selected else 1.2))
             text = control.label() or "?"
+            if control.kind == "macro":
+                text = f"{text or '?'} \u25b6 {control.macro}"
             width = max(30, painter.fontMetrics().horizontalAdvance(text) + 16)
             chip = QRectF(center.x() - width / 2, center.y() - 15, width, 30)
             painter.setBrush(QColor(0, 0, 0, 150))
-            painter.drawRoundedRect(chip, 15 if control.kind == "skill" else 8, 15 if control.kind == "skill" else 8)
+            round_chip = control.kind in ("skill", "macro")
+            painter.drawRoundedRect(chip, 15 if round_chip else 8, 15 if round_chip else 8)
             painter.setPen(QColor("#ffffff"))
             painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -429,7 +500,11 @@ class PhoneView(QWidget):
         if down:
             for control in self.engine.swipes(name):
                 self.gestures.swipe(self.engine.identifier(control), (control.x, control.y), control.end())
+        if down:
+            for control in self.engine.macros(name):
+                self.controller.run_macro_named(control.macro)
         self.send_touches(self.engine.press(name, down, *self.frame_size()))
+        self.steer_tilt()
         turbo = any(control.kind == "turbo" and self.engine.identifier(control) in self.engine.pressed
                     for control in self.controls)
         if turbo and not self.turbo_timer.isActive():
@@ -440,6 +515,10 @@ class PhoneView(QWidget):
 
     def pulse(self):
         self.send_touches(self.engine.pulse())
+
+    def steer_tilt(self):
+        if self.engine.tilt_control():
+            self.tilter.aim(*self.engine.tilt())
 
     def toggle_shooting(self, quiet=False):
         if self.shooting:
@@ -577,6 +656,7 @@ class PhoneView(QWidget):
         if left != self.pad_left:
             self.pad_left = left
             self.send_touches(self.engine.stick(*left, width, height))
+            self.steer_tilt()
         if any(right) and self.engine.aim_control():
             self.pad_looking = True
             self.send_touches(self.engine.look(right[0] * LOOK_SPEED, right[1] * LOOK_SPEED, width, height))
@@ -604,6 +684,7 @@ class PhoneView(QWidget):
     def release_input(self):
         self.stop_shooting()
         self.turbo_timer.stop()
+        self.tilter.aim(0.0, 0.0)
         if not self.bridge:
             self.held.clear()
             self.engine.release_all()
@@ -660,7 +741,7 @@ class PhoneView(QWidget):
         if not self.editing:
             return
         self.editing = False
-        self.controls[:] = [control for control in self.controls if control.kind == "joystick" or control.key]
+        self.controls[:] = [control for control in self.controls if control.complete()]
         self.save_controls()
         self.edit_bar.hide()
         self.editing_changed.emit(False)
@@ -674,7 +755,7 @@ class PhoneView(QWidget):
         self.selected = index
         self.bind_step = 0
         kind = self.controls[index].kind if index is not None else None
-        if kind == "joystick":
+        if kind in keymap.FOUR_KEYS:
             hint = f"Press the key for {DIRECTION_NAMES[self.bind_step]}"
         else:
             hint = HINTS.get(kind, "Press a key or controller button for this spot")
@@ -693,7 +774,7 @@ class PhoneView(QWidget):
                 if (position - tip).manhattanLength() <= 18:
                     return index, True
             center = QPointF(rect.left() + control.x * rect.width(), rect.top() + control.y * rect.height())
-            reach = control.size * span if control.kind == "joystick" else 24
+            reach = control.size * span if control.kind in keymap.FOUR_KEYS else 24
             if (position - center).manhattanLength() <= reach * 1.3:
                 return index, False
         return None, False
@@ -708,7 +789,7 @@ class PhoneView(QWidget):
                 self.save_controls()
             return
         if index is None:
-            self.controls[:] = [control for control in self.controls if control.kind == "joystick" or control.key]
+            self.controls[:] = [control for control in self.controls if control.complete()]
             self.controls.append(keymap.Control("tap", *self.normalized(event.position())))
             index = len(self.controls) - 1
         self.select(index)
@@ -728,7 +809,7 @@ class PhoneView(QWidget):
         if self.selected is None:
             return
         control = self.controls[self.selected]
-        if control.kind == "joystick":
+        if control.kind in keymap.FOUR_KEYS:
             control.keys[self.bind_step] = name
             self.bind_step = (self.bind_step + 1) % 4
             self.edit_bar.hint.setText(f"Press the key for {DIRECTION_NAMES[self.bind_step]}")
@@ -738,9 +819,9 @@ class PhoneView(QWidget):
         self.update()
 
     def resize_control(self, control, steps):
-        if control.kind in ("aim", "look"):
+        if control.kind in ("aim", "look", "tilt"):
             control.speed = round(min(4.0, max(0.2, control.speed + steps * 0.1)), 2)
-            self.host.toast(f"Aim sensitivity {control.speed:.1f}")
+            self.host.toast(f"{'Tilt' if control.kind == 'tilt' else 'Aim'} sensitivity {control.speed:.1f}")
         else:
             control.size = min(0.3, max(0.04, control.size + steps * 0.01))
         self.save_controls()
@@ -775,6 +856,15 @@ class PhoneView(QWidget):
 
     def add_swipe(self):
         self.add(keymap.Control("swipe", 0.5, 0.7, x2=0.5, y2=0.45))
+
+    def add_toggle(self):
+        self.add(keymap.Control("toggle", 0.2, 0.45))
+
+    def add_tilt(self):
+        self.add(keymap.Control("tilt", 0.14, 0.5, keys=["", "A", "", "D"], size=0.08))
+
+    def add_macro(self, name):
+        self.add(keymap.Control("macro", 0.5, 0.5, macro=name))
 
     def clear_controls(self):
         self.controls.clear()

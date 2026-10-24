@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 from .theme import COLORS, ICONS
 from .widgets import ToolButton
 
-ALWAYS_ON = {"fullscreen", "popout", "game", "install", "folder", "eco", "sync"}
+ALWAYS_ON = {"fullscreen", "popout", "game", "install", "folder", "eco", "sync", "pin"}
 
 
 class ToolRail(QWidget):
@@ -30,10 +30,13 @@ class ToolRail(QWidget):
              ("record", "Record the screen  (Ctrl+Shift+R)", host.toggle_video, True)],
             [("install", "Install apps", host.choose_apps),
              ("folder", "Add files to Downloads", host.choose_files),
+             ("download", "Save files from Android to your PC", host.pull_files),
              ("location", "Set location", host.choose_location),
              ("shake", "Shake", host.shake)],
             [("eco", "Eco mode: lower FPS and CPU use", host.toggle_eco, True),
-             ("sync", "Sync input to every running instance", host.toggle_sync, True)],
+             ("sync", "Sync input to every running instance", host.toggle_sync, True),
+             ("mute", "Mute this instance", host.toggle_mute, True),
+             ("pin", "Keep Androidbox on top of other windows", host.toggle_pin, True)],
         ]
         column = QWidget()
         layout = QVBoxLayout(column)
@@ -72,6 +75,8 @@ class ToolRail(QWidget):
             "record": bool(controller and controller.recording_video),
             "eco": bool(controller and controller.instance.eco),
             "sync": prefs["sync_input"],
+            "mute": bool(controller and controller.instance.muted),
+            "pin": prefs["always_on_top"],
         }
         for name, checked in states.items():
             self.buttons[name].setChecked(checked)

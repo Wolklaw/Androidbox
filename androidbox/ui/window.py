@@ -1,17 +1,21 @@
+import ctypes
+import re
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
-                               QMenu, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
+                               QMenu, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
-from .. import VERSION, browser, claude, emulator, installer, instances, keymap, macros, paths, profiles, settings, updates
+from .. import (VERSION, browser, claude, emulator, installer, instances, keymap, macros, paths, profiles, relocate,
+                settings, system, updates)
+from ..hotkeys import Hotkeys
 from . import tasks
 from .controller import Controller, plural
 from .host import ScreenActions
-from .pages import (ControlsPage, InstancesPage, MacrosPage, NoAccelerationPage, ProfilePage, Progress, ScreenPage,
-                    SettingsPage, SetupPage, show_text)
+from .pages import (ControlsPage, InstancesPage, LibraryPage, MacrosPage, NoAccelerationPage, ProfilePage, Progress,
+                    ScreenPage, SettingsPage, SetupPage, app_name, show_text)
 from .popout import PopoutWindow
 from .theme import COLORS, ICONS
 from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, ProfileButton, Toast, ToolButton, button, column,
@@ -21,6 +25,7 @@ PAGES = {
     "screen": ("screen", "Screen"),
     "controls": ("game", "Game controls"),
     "macros": ("macro", "Macros"),
+    "library": ("library", "Apps"),
     "settings": ("settings", "Settings"),
     "instances": ("apps", "All instances"),
     "profile": ("person", "Profile"),
@@ -39,7 +44,7 @@ def documents():
 
 
 class MainWindow(QMainWindow, ScreenActions):
-    def __init__(self):
+    def __init__(self, background=False, request=None):
         super().__init__()
         self.setWindowTitle("Androidbox")
         self.setWindowIcon(QIcon(str(paths.ICON)))
@@ -58,6 +63,12 @@ class MainWindow(QMainWindow, ScreenActions):
         self.page = "instances"
         self.closing = False
         self.was_maximized = False
+        self.background = background
+        self.startup_request = request if request and (request["instance"] or request["launch"]) else None
+        self.boss_hidden = False
+        self.hidden_popouts = []
+        self.told_about_tray = False
+        self.hotkeys = Hotkeys(QApplication.instance())
         tasks.relay.on_error = self.report
 
         central = QWidget()
@@ -83,6 +94,7 @@ class MainWindow(QMainWindow, ScreenActions):
             "screen": self.screen,
             "controls": ControlsPage(self),
             "macros": MacrosPage(self),
+            "library": LibraryPage(self),
             "settings": SettingsPage(self),
             "instances": InstancesPage(self),
             "profile": ProfilePage(self),
@@ -94,6 +106,11 @@ class MainWindow(QMainWindow, ScreenActions):
         self.install_shortcuts()
         self.profile_timer = QTimer(self, interval=3000, timeout=self.watch_profile)
         self.profile_timer.start()
+        self.tray = None
+        self.setup_tray()
+        self.update_hotkeys()
+        self.apply_always_on_top()
+        self.run(relocate.clean_up_old_location, failed=lambda _: None)
 
         if installer.is_installed():
             self.open_instances()
@@ -146,7 +163,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.page_title.setContentsMargins(8, 0, 0, 4)
         pages_layout.addWidget(self.page_title)
         self.nav_buttons = {}
-        for name in ("screen", "controls", "macros", "settings"):
+        for name in ("screen", "controls", "macros", "library", "settings"):
             glyph, text = PAGES[name]
             nav = NavButton(ICONS[glyph], text)
             nav.clicked.connect(lambda _=False, page=name: self.show_page(page))
@@ -215,7 +232,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.sidebar.show()
         self.header.show()
         if not self.instances:
-            instances.create(self.instances, "Main")
+            cores, ram = system.suggested_hardware()
+            instances.create(self.instances, "Main", cores=cores, ram=ram)
         for instance in self.instances:
             self.add_controller(instance)
         selected = self.prefs["selected"]
@@ -224,6 +242,12 @@ class MainWindow(QMainWindow, ScreenActions):
         self.check_for_updates()
         if profiles.sync_missing():
             self.toast("Your sync folder isn't available. Using this PC's copy of your profiles for now", "bad")
+        for controller in self.controllers.values():
+            if controller.instance.autostart:
+                controller.start()
+        if self.startup_request:
+            request, self.startup_request = self.startup_request, None
+            self.handle_request(request)
 
     def setup_finished(self):
         self.open_instances()
@@ -353,7 +377,7 @@ class MainWindow(QMainWindow, ScreenActions):
         if controller is self.active():
             self.update_power()
             self.update_header()
-            if self.page in ("screen", "settings", "macros", "controls"):
+            if self.page in ("screen", "settings", "macros", "controls", "library"):
                 self.show_page(self.page)
         self.update_mirrors()
 
@@ -386,6 +410,10 @@ class MainWindow(QMainWindow, ScreenActions):
             claude.enable() if value else claude.disable()
         if key == "sync_input":
             self.update_mirrors()
+        if key == "close_to_tray":
+            self.update_tray()
+        if key == "always_on_top":
+            self.apply_always_on_top()
         self.refresh_tools()
         self.screen.phone.update()
         for popout in self.popouts.values():
@@ -418,6 +446,7 @@ class MainWindow(QMainWindow, ScreenActions):
             self.screen.phone.show_controller(None)
         window = PopoutWindow(self, controller)
         self.popouts[key] = window
+        self.apply_always_on_top()
         window.show()
         if key == self.current:
             self.show_page(self.page)
@@ -626,6 +655,9 @@ class MainWindow(QMainWindow, ScreenActions):
         android = QComboBox()
         android.addItem("Android 16 (recommended)", "36")
         android.addItem("Android 11 (runs older 32-bit games)", "30")
+        storage = QComboBox()
+        for size in instances.DISK_SIZES:
+            storage.addItem(f"{size} GB" + ("  (big games need more)" if size == instances.DISK_SIZES[0] else ""), size)
         modal.add(label("Name", "Section"))
         modal.add(name)
         saved = profiles.presets()
@@ -633,7 +665,8 @@ class MainWindow(QMainWindow, ScreenActions):
         start.addItem("Standard settings", None)
         for values in saved:
             start.addItem(values["name"], values)
-        custom = [label("Display", "Section"), display, label("Android version", "Section"), android]
+        custom = [label("Display", "Section"), display, label("Android version", "Section"), android,
+                  label("Storage", "Section"), storage]
         if saved:
             modal.add(label("Start from", "Section"))
             modal.add(start)
@@ -647,19 +680,22 @@ class MainWindow(QMainWindow, ScreenActions):
             modal.add(widget)
         modal.cancel()
         modal.action("Create", lambda: self.create_instance(name.text(), display.currentData(), android.currentData(),
-                                                            start.currentData()))
+                                                            start.currentData(), storage.currentData()))
         modal.open()
         name.setFocus()
         name.selectAll()
 
-    def create_instance(self, name, display="Phone", api=installer.DEFAULT_API, preset=None):
+    def create_instance(self, name, display="Phone", api=installer.DEFAULT_API, preset=None,
+                        disk=instances.DISK_SIZES[0]):
         if preset:
             hardware = {key: preset[key] for key in profiles.PRESET_FIELDS if key in preset}
             if hardware.get("api") not in installer.ANDROID_VERSIONS:
                 hardware.pop("api", None)
         else:
             width, height, density = instances.RESOLUTIONS[display]
-            hardware = {"width": width, "height": height, "density": density, "api": api}
+            cores, ram = system.suggested_hardware()
+            hardware = {"width": width, "height": height, "density": density, "api": api, "disk": disk,
+                        "cores": cores, "ram": ram}
         instance = instances.create(self.instances, name.strip() or "Android", **hardware)
         self.add_controller(instance)
         self.select(instance.id)
@@ -734,6 +770,62 @@ class MainWindow(QMainWindow, ScreenActions):
     def set_resolution(self, controller, preset):
         width, height, density = instances.RESOLUTIONS[preset]
         self.set_hardware(controller, width=width, height=height, density=density)
+
+    def pick_display(self, controller, value):
+        if value == "custom":
+            self.custom_resolution(controller)
+        elif value != "Custom":
+            self.set_resolution(controller, value)
+
+    def custom_resolution(self, controller):
+        instance = controller.instance
+        modal = Modal(self.dialog_parent(), "Custom display",
+                      "Any size from 320 to 3840 pixels. Density is how large things look: 160 is small, 420 is a "
+                      "phone and 640 is huge.")
+        fields = {key: QLineEdit(str(getattr(instance, key))) for key in instances.SIZE_LIMITS}
+        modal.add(label("Width and height, in pixels", "Section"))
+        modal.add(row(fields["width"], fields["height"]))
+        modal.add(label("Density, in dpi", "Section"))
+        modal.add(fields["density"])
+
+        def apply():
+            try:
+                values = {key: int(field.text()) for key, field in fields.items()}
+            except ValueError:
+                self.toast("Use whole numbers", "bad")
+                return False
+            for key, (low, high) in instances.SIZE_LIMITS.items():
+                if not low <= values[key] <= high:
+                    self.toast(f"{key.capitalize()} has to be between {low} and {high}", "bad")
+                    return False
+            self.set_hardware(controller, **values)
+
+        modal.cancel()
+        modal.action("Use this display", apply)
+        modal.closed.connect(self.refresh_settings)
+        modal.open()
+
+    def refresh_settings(self):
+        if self.page == "settings" and self.active():
+            self.show_page("settings")
+
+    def set_storage(self, controller, size):
+        instance = controller.instance
+        if size == instance.disk:
+            return
+
+        def erase():
+            instance.disk = size
+            instance.wipe_next = True
+            controller.save()
+            if controller.state in ("on", "booting"):
+                controller.stop(then=controller.start)
+            else:
+                self.toast(f"{instance.name} gets {size} GB the next time it starts")
+
+        modal = confirm(self.dialog_parent(), "Change storage?", f"{instance.name} gets {size} GB, which erases every "
+                        "app and all data on it. This can't be undone.", "Erase and change", erase, danger=True)
+        modal.closed.connect(self.refresh_settings)
 
     def ask(self, title, text, default, action, submit):
         modal = Modal(self.dialog_parent(), title, text)
@@ -922,6 +1014,213 @@ class MainWindow(QMainWindow, ScreenActions):
         for controller in self.controllers.values():
             controller.stop()
 
+    def start_all(self):
+        for controller in self.controllers.values():
+            controller.start()
+
+    def apply_template(self, package, name):
+        def apply():
+            keymap.save(package, keymap.template(name))
+            for phone in self.phones():
+                if phone.package == package:
+                    phone.load_controls()
+            self.controls_changed()
+            self.toast(f"Started from the {name} layout. Move each control onto the game's button", "good")
+
+        if keymap.load(package):
+            confirm(self.dialog_parent(), "Replace this game's controls?",
+                    f"The {name} layout takes the place of the controls you set up for {package}.", "Replace", apply,
+                    danger=True)
+        else:
+            apply()
+
+    def set_game_fps(self, controller, package, fps):
+        profiles.set_game(package, fps=fps)
+        if controller.package == package:
+            controller.refresh_frame_rate()
+
+    def uninstall_app(self, controller, package):
+        def uninstall():
+            def finished(ok):
+                controller.apps = None
+                if self.page == "library":
+                    self.show_page("library")
+                text = f"Removed {app_name(package)}" if ok else f"Couldn't remove {package}"
+                self.toast(text, "good" if ok else "bad")
+
+            self.run(lambda: controller.emulator.uninstall(package), finished)
+
+        confirm(self.dialog_parent(), f"Uninstall {app_name(package)}?", "Its data on this instance goes with it.",
+                "Uninstall", uninstall, danger=True)
+
+    def shortcut_for(self, controller, package=None):
+        instance = controller.instance
+        name = app_name(package) if package else instance.name
+        title = re.sub(r'[\\/:*?"<>|]', "", f"{name} on {instance.name}" if package else f"{name} (Androidbox)").strip()
+        arguments = ["--instance", instance.id] + (["--launch", package] if package else [])
+        desktop = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation))
+        text = f"Opens {name} in Androidbox" if package else f"Starts {instance.name} in Androidbox"
+        self.run(lambda: system.shortcut(desktop / f"{title}.lnk", arguments, text),
+                 lambda _: self.toast(f"Put {title} on your desktop", "good"),
+                 lambda error: self.toast(f"Couldn't make the shortcut: {error}", "bad"))
+
+    def find_instance(self, wanted):
+        wanted = (wanted or "").lower()
+        return next((controller for controller in self.controllers.values()
+                     if wanted in (controller.instance.id.lower(), controller.instance.name.lower())), None)
+
+    def handle_request(self, request):
+        # A second Androidbox, or a desktop shortcut, asks this one to start an instance or open a game
+        quiet = request.get("background")
+        if not quiet:
+            self.bring_back()
+        controller = self.find_instance(request.get("instance")) or (self.active() if request.get("launch") else None)
+        if request.get("instance") and not controller:
+            self.toast(f"There's no instance called {request['instance']}", "bad")
+        if not controller:
+            return
+        if request.get("launch"):
+            controller.launch(request["launch"])
+        elif request.get("instance") and controller.state in ("off", "crashed"):
+            controller.start()
+        if not quiet:
+            self.select(controller.instance.id)
+
+    def setup_tray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        self.tray = QSystemTrayIcon(QIcon(str(paths.ICON)), self)
+        self.tray.setToolTip("Androidbox")
+        self.tray_menu = QMenu()
+        self.tray_menu.aboutToShow.connect(self.fill_tray_menu)
+        self.tray.setContextMenu(self.tray_menu)
+        self.tray.activated.connect(lambda reason: reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                                                              QSystemTrayIcon.ActivationReason.DoubleClick)
+                                    and self.bring_back())
+        self.update_tray()
+
+    def tray_active(self):
+        return bool(self.tray and self.tray.isVisible())
+
+    def update_tray(self):
+        if self.tray:
+            self.tray.setVisible(self.prefs["close_to_tray"] or self.background)
+
+    def fill_tray_menu(self):
+        menu = self.tray_menu
+        menu.clear()
+        menu.addAction("Open Androidbox", self.bring_back)
+        menu.addSeparator()
+        for controller in self.controllers.values():
+            verb = "Stop" if controller.state not in ("off", "crashed") else "Start"
+            menu.addAction(f"{verb} {controller.instance.name}", lambda c=controller: self.toggle_controller(c))
+        menu.addSeparator()
+        menu.addAction("Quit Androidbox", self.quit_app)
+
+    def toggle_controller(self, controller):
+        if controller.state in ("off", "crashed"):
+            controller.start()
+        else:
+            controller.stop()
+
+    def bring_back(self):
+        self.boss_hidden = False
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        for popout in self.hidden_popouts:
+            popout.show()
+        self.hidden_popouts = []
+        ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+        self.raise_()
+
+    def hide_to_tray(self):
+        self.hidden_popouts = [popout for popout in self.popouts.values() if popout.isVisible()]
+        for popout in self.hidden_popouts:
+            popout.hide()
+        self.hide()
+
+    def update_hotkeys(self, announce=False):
+        wanted = {}
+        if self.prefs["boss_key"]:
+            wanted[self.prefs["boss_key"]] = self.boss
+        for macro in macros.load():
+            if macro.get("global") and macro.get("hotkey"):
+                wanted.setdefault(macro["hotkey"], lambda text=macro["hotkey"]: self.global_macro(text))
+        refused = self.hotkeys.set(wanted)
+        if refused and announce:
+            self.toast(f"Windows won't give Androidbox {', '.join(refused)}. Use Ctrl, Alt, Shift or Win with a key, "
+                       "and one no other program has taken", "bad")
+
+    def set_boss_key(self, text):
+        self.set_pref("boss_key", text)
+        self.update_hotkeys(announce=True)
+
+    def global_macro(self, text):
+        live = [self.active(), *self.controllers.values()]
+        target = next((controller for controller in live if controller and controller.bridge), None)
+        if target:
+            target.trigger_macro(text)
+
+    def boss(self):
+        quiet = not self.boss_hidden
+        for controller in self.controllers.values():
+            controller.hush(quiet)
+        if quiet:
+            self.boss_hidden = True
+            self.hide_to_tray()
+        else:
+            self.bring_back()
+
+    def apply_always_on_top(self):
+        on = self.prefs["always_on_top"]
+        for window in (self, *self.popouts.values()):
+            if bool(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) != on:
+                shown = window.isVisible()
+                window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
+                if shown:
+                    window.show()
+
+    def set_start_with_windows(self, enabled):
+        try:
+            system.start_with_windows(enabled)
+        except OSError as error:
+            self.toast(f"Windows wouldn't allow that: {error}", "bad")
+            return
+        self.toast("Androidbox will open in the tray when you sign in" if enabled else "Androidbox no longer starts "
+                   "with Windows")
+
+    def move_files(self):
+        if any(controller.state not in ("off", "crashed") for controller in self.controllers.values()):
+            self.toast("Stop every Android first", "bad")
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Choose where Androidbox keeps its files",
+                                                  str(paths.HOME.parent))
+        if not folder:
+            return
+        target = relocate.target_for(folder)
+        confirm(self.dialog_parent(), "Move Androidbox's files?",
+                f"Everything moves to {target}. That can take a few minutes, and Androidbox restarts when it's done. "
+                "The old copy is deleted after the restart.", "Move", lambda: self.start_move(folder))
+
+    def start_move(self, folder):
+        progress = Progress(self.dialog_parent(), "Moving files", "Copying Android's files to the new place.")
+
+        def moved(target):
+            progress.close_modal()
+            modal = Modal(self.dialog_parent(), "Files moved", f"Androidbox now keeps its files in {target}. It has "
+                          "to restart to use them.", dismissable=False)
+            modal.action("Restart Androidbox", self.restart)
+            modal.open()
+
+        self.run(lambda: relocate.move(folder, self.byte_progress(progress)), moved,
+                 lambda error: progress.done("Couldn't move the files", str(error)))
+
+    def restart(self):
+        system.restart()
+        self.quit_app()
+
+
     def toggle_fullscreen(self):
         chrome = (self.sidebar, self.header, self.screen.tools)
         if self.isFullScreen():
@@ -942,15 +1241,29 @@ class MainWindow(QMainWindow, ScreenActions):
         self.toast("Press F11 to leave full screen")
 
     def closeEvent(self, event):
+        event.ignore()
+        if self.prefs["close_to_tray"] and self.tray_active() and not self.closing:
+            self.hide_to_tray()
+            if not self.told_about_tray:
+                self.told_about_tray = True
+                self.tray.showMessage("Androidbox is still running", "Open it again from the tray icon. Quit from "
+                                      "there to shut Android down.", QSystemTrayIcon.MessageIcon.Information, 5000)
+            return
+        self.quit_app()
+
+    def quit_app(self):
+        if self.closing:
+            return
         self.closing = True
+        self.hotkeys.set({})
+        if self.tray:
+            self.tray.hide()
         for popout in list(self.popouts.values()):
             popout.close()
         running = [c for c in self.controllers.values() if c.state not in ("off", "crashed")]
         if not running:
-            event.accept()
             QApplication.quit()
             return
-        event.ignore()
         self.hide()
         remaining = [len(running)]
 

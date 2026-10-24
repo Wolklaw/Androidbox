@@ -1,12 +1,15 @@
+import json
+import re
 import subprocess
 import time
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLineEdit, QMenu, QPlainTextEdit,
-                               QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QKeySequenceEdit,
+                               QLineEdit, QMenu, QPlainTextEdit, QScrollArea, QSizePolicy, QStackedWidget, QToolButton,
+                               QVBoxLayout, QWidget)
 
-from .. import VERSION, claude, installer, instances, keymap, macros, profiles
+from .. import VERSION, claude, installer, instances, keymap, macros, paths, profiles, system
 from .controller import plural
 from .phone import PhoneView
 from .theme import COLORS, ICONS
@@ -297,7 +300,13 @@ class ControlsPage(Page):
         load.setEnabled(bool(package))
         share = button("Export…", lambda: self.host.export_controls(package), kind="secondary")
         share.setEnabled(bool(controls))
-        self.add(card(label("Current app", "Section"), current, row(edit, clear, None, load, share)))
+        starters = button("Starter layouts", kind="secondary")
+        starters.setEnabled(bool(package))
+        starter_menu = QMenu(starters)
+        for name, (what, _) in keymap.TEMPLATES.items():
+            starter_menu.addAction(f"{name}  ·  {what}", lambda n=name: self.host.apply_template(package, n))
+        starters.setMenu(starter_menu)
+        self.add(card(label("Current app", "Section"), current, row(edit, clear, None, starters, load, share)))
 
         enabled = Toggle(prefs["game_controls"])
         enabled.toggled.connect(lambda on: self.host.set_pref("game_controls", on))
@@ -320,7 +329,10 @@ class ControlsPage(Page):
                  ("Fire and Scope", "Taps for the left and right mouse buttons while aiming"),
                  ("Skill", "MOBA casting: hold the key, point with the mouse, release to cast"),
                  ("Turbo", "Hold the key to tap the same spot rapidly"),
+                 ("Hold", "Press once to hold a spot down, again to let go. For sprint and auto-run"),
                  ("Swipe", "One key performs a drag along an arrow you place"),
+                 ("Tilt", "Keys tip the device, like steering a wheel. For racing games. The left stick tilts too"),
+                 ("Macro", "One key plays a macro you recorded, and stops it if you press it again"),
                  ("Zoom", "Hold Ctrl and scroll to pinch in and out, no setup needed")]
         rows = [label("Controls you can add", "Section")]
         rows += [pair(name, what) for name, what in kinds]
@@ -380,23 +392,43 @@ class MacrosPage(Page):
         if controller.playing == name:
             actions = [button("Stop", controller.stop_macro, kind="danger")]
         else:
-            actions = [button("Play", lambda: self.play(controller, macro, 1)),
-                       button("Loop", lambda: self.play(controller, macro, 0), kind="secondary")]
+            actions = [button("Play", lambda: self.play(controller, macro))]
+        actions.append(button("Edit steps", lambda: MacroEditor(self.host.dialog_parent(), controller, name).open(),
+                              kind="secondary"))
         actions.append(button("Delete", lambda: self.delete(controller, name), kind="secondary"))
         speed = choice([(f"{value:g}×", value) for value in macros.SPEEDS], macro.get("speed", 1.0))
         speed.setMinimumWidth(90)
         speed.currentIndexChanged.connect(lambda: controller.update_macro(name, speed=speed.currentData()))
+        repeat = choice([(text, count) for count, text in macros.LOOPS], macro.get("loops", 1))
+        repeat.setMinimumWidth(150)
+        repeat.currentIndexChanged.connect(lambda: controller.update_macro(name, loops=repeat.currentData()))
+        wait = choice([(f"{gap:g} s" if gap else "No wait", gap) for gap in macros.GAPS], macro.get("gap", 0.3))
+        wait.setMinimumWidth(110)
+        wait.currentIndexChanged.connect(lambda: controller.update_macro(name, gap=wait.currentData()))
         hotkey = QKeySequenceEdit(QKeySequence(macro.get("hotkey", "")))
         hotkey.setMaximumSequenceLength(1)
         hotkey.setClearButtonEnabled(True)
         hotkey.setFixedWidth(150)
-        hotkey.editingFinished.connect(lambda: controller.update_macro(name, hotkey=hotkey.keySequence().toString()))
-        options = row(label("Speed", "Small"), speed, label("Hotkey", "Small"), hotkey,
-                      label("Press it on the screen to play or stop, like Ctrl+1", "Small"), None, spacing=10)
-        return column(row(title, stats, None, *actions), options, spacing=8)
+        hotkey.editingFinished.connect(lambda: self.set_hotkey(controller, name, hotkey.keySequence().toString()))
+        anywhere = Toggle(macro.get("global", False))
+        anywhere.toggled.connect(lambda on: self.set_anywhere(controller, name, on))
+        how = row(label("Speed", "Small"), speed, label("Repeat", "Small"), repeat, label("Wait between", "Small"),
+                  wait, None, spacing=10)
+        keys = row(label("Hotkey", "Small"), hotkey, label("Works in any program", "Small"), anywhere, None, spacing=10)
+        hint = label("Press the hotkey on the screen to play or stop. To use it from any program, turn on Works in "
+                     "any program and include Ctrl, Alt, Shift or Win, like Ctrl+1.", "Small", wrap=True)
+        return column(row(column(title, stats, spacing=4), None, *actions), how, keys, hint, spacing=8)
 
-    def play(self, controller, macro, loops):
-        controller.play_macro(macro, loops)
+    def set_hotkey(self, controller, name, text):
+        controller.update_macro(name, hotkey=text)
+        self.host.update_hotkeys()
+
+    def set_anywhere(self, controller, name, on):
+        controller.update_macro(name, **{"global": on})
+        self.host.update_hotkeys(announce=True)
+
+    def play(self, controller, macro):
+        controller.play_macro(macro)
         self.host.show_page("screen")
 
     def delete(self, controller, name):
@@ -421,15 +453,23 @@ class SettingsPage(Page):
         name.editingFinished.connect(lambda: host.rename(controller, name.text()))
         self.add(card(label("Name", "Section"), name))
 
-        cores = choice([(f"{count} cores", count) for count in (2, 4, 6, 8)], instance.cores)
-        memory = choice([(f"{size // 1024} GB", size) for size in (2048, 3072, 4096, 6144, 8192)], instance.ram)
-        display = choice([(f"{preset}  ·  {width}×{height}", preset)
-                          for preset, (width, height, _) in instances.RESOLUTIONS.items()], instance.resolution)
+        cores = choice([(f"{count} cores", count) for count in system.core_options(instance.cores)], instance.cores)
+        memory = choice([(f"{size // 1024} GB" if size % 1024 == 0 else f"{size / 1024:.1f} GB", size)
+                         for size in system.memory_options(instance.ram)], instance.ram)
+        shown = [(f"{preset}  ·  {width}×{height}", preset)
+                 for preset, (width, height, _) in instances.RESOLUTIONS.items()]
+        if instance.resolution == "Custom":
+            shown.append((f"Custom  ·  {instance.width}×{instance.height}  ·  {instance.density} dpi", "Custom"))
+        display = choice([*shown, ("Custom…", "custom")], instance.resolution)
         rate = choice([(f"{fps} FPS", fps) for fps in instances.FRAME_RATES], instance.fps)
+        graphics = choice([(name, key) for key, name in instances.GPU_MODES.items()], instance.gpu_mode)
+        disk = choice([(f"{size} GB", size) for size in sorted({*instances.DISK_SIZES, instance.disk})], instance.disk)
         cores.currentIndexChanged.connect(lambda: host.set_hardware(controller, cores=cores.currentData()))
         memory.currentIndexChanged.connect(lambda: host.set_hardware(controller, ram=memory.currentData()))
-        display.currentIndexChanged.connect(lambda: host.set_resolution(controller, display.currentData()))
+        display.currentIndexChanged.connect(lambda: host.pick_display(controller, display.currentData()))
         rate.currentIndexChanged.connect(lambda: host.set_hardware(controller, fps=rate.currentData()))
+        graphics.currentIndexChanged.connect(lambda: host.set_hardware(controller, gpu=graphics.currentData()))
+        disk.currentIndexChanged.connect(lambda: host.set_storage(controller, disk.currentData()))
         restart = []
         if controller.state in ("on", "booting"):
             restart = [divider(), row(label("Restart Android to use new hardware settings.", "Muted"), None,
@@ -439,10 +479,18 @@ class SettingsPage(Page):
                       setting("Memory", "4 GB suits most apps and games.", memory), divider(),
                       setting("Display", "Tablet runs in landscape, which most games prefer.", display), divider(),
                       setting("Frame rate", "Higher is smoother in games that support it, and uses more power.",
-                              rate), *restart))
+                              rate), divider(),
+                      setting("Graphics", "Your graphics card is fastest. If Android crashes while starting, try "
+                                          "Automatic, then Software.", graphics), divider(),
+                      setting("Storage", "Room for apps and games. Big games need 64 GB or more. Changing it erases "
+                                         "this instance's apps and data.", disk), *restart))
 
         eco = Toggle(instance.eco)
         eco.toggled.connect(controller.set_eco)
+        muted = Toggle(instance.muted)
+        muted.toggled.connect(controller.set_muted)
+        autostart = Toggle(instance.autostart)
+        autostart.toggled.connect(controller.set_autostart)
         webcam = Toggle(instance.camera)
         webcam.toggled.connect(lambda on: host.set_hardware(controller, camera=on))
         ads = Toggle(instance.block_ads)
@@ -451,6 +499,10 @@ class SettingsPage(Page):
         self.add(card(label("Extras", "Section"),
                       setting("Eco mode", "Draws fewer frames and lowers Android's CPU priority. Good for "
                                           "idle games running in the background.", eco), divider(),
+                      setting("Mute", "Silences this instance's sound, so a game in the background stays quiet.",
+                              muted), divider(),
+                      setting("Start with Androidbox", "Starts this instance whenever Androidbox opens, including "
+                                                       "when Windows starts it.", autostart), divider(),
                       setting("Webcam", "Lets Android apps use your PC's webcam as their camera. Applies the "
                                         "next time Android starts.", webcam), divider(),
                       setting("Block ads", "Blocks ad networks inside apps and games. It can't remove ads that "
@@ -489,10 +541,13 @@ class InstancesPage(Page):
         running = any(c.state not in ("off", "crashed") for c in host.controllers.values())
         stop_all = button("Stop all", host.stop_all, kind="secondary")
         stop_all.setEnabled(running)
+        start_all = button("Start all", host.start_all, kind="secondary")
+        start_all.setEnabled(any(c.state in ("off", "crashed") for c in host.controllers.values()))
         tile = button("Side by side", host.arrange, kind="secondary")
         tile.setEnabled(any(c.on for c in host.controllers.values()))
         self.add(row(button("New instance", host.new_instance),
-                     button("Restore a backup", host.restore_backup, kind="secondary"), tile, stop_all, None))
+                     button("Restore a backup", host.restore_backup, kind="secondary"), tile, start_all, stop_all,
+                     None))
         rows = []
         for controller in host.controllers.values():
             instance = controller.instance
@@ -508,6 +563,7 @@ class InstancesPage(Page):
                 power.setEnabled(controller.state != "stopping")
             more = menu_button([
                 ("Open in its own window", lambda c=controller: host.pop_out(c)),
+                ("Create desktop shortcut", lambda c=controller: host.shortcut_for(c)),
                 ("Clone", lambda c=controller: host.clone_instance(c)),
                 ("Back up", lambda c=controller: host.back_up(c)),
                 (None, None),
@@ -531,7 +587,9 @@ class InstancesPage(Page):
                       setting("Sync input", "Mirror taps and keys from the instance you're using to every other "
                                             "running instance. Best when they use the same display setting.", sync),
                       divider(),
-                      setting("Show FPS", "Show frames per second in the corner of the screen.", fps), divider(),
+                      setting("Show FPS and system use", "Show frames per second in the corner of the screen, with how "
+                                                         "much processor and memory the emulator is using.", fps),
+                      divider(),
                       setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub once "
                                                    "per start whether a newer release is out.", updates),
                       divider(),
@@ -539,6 +597,29 @@ class InstancesPage(Page):
                                                                   "screenshots and install apps on your running "
                                                                   "instances to test them, through a helper "
                                                                   "script in your Androidbox folder.", access)))
+
+        tray = Toggle(host.prefs["close_to_tray"])
+        tray.toggled.connect(lambda on: host.set_pref("close_to_tray", on))
+        windows = Toggle(system.starts_with_windows())
+        windows.toggled.connect(host.set_start_with_windows)
+        boss = QKeySequenceEdit(QKeySequence(host.prefs["boss_key"]))
+        boss.setMaximumSequenceLength(1)
+        boss.setClearButtonEnabled(True)
+        boss.setFixedWidth(170)
+        boss.editingFinished.connect(lambda: host.set_boss_key(boss.keySequence().toString()))
+        move = button("Move…", host.move_files, kind="secondary")
+        self.add(card(label("This PC", "Section"),
+                      setting("Keep running in the tray", "Closing the window hides Androidbox and leaves Android "
+                                                          "running, so idle games keep going. Quit from the tray "
+                                                          "icon.", tray), divider(),
+                      setting("Start with Windows", "Opens Androidbox in the tray when you sign in, and starts the "
+                                                    "instances set to start with Androidbox.", windows), divider(),
+                      setting("Boss key", "A shortcut that works in any program. It hides every Androidbox window "
+                                          "and mutes Android, and brings them back when you press it again. It needs "
+                                          "Ctrl, Alt, Shift or Win with a key.", boss), divider(),
+                      setting("Where Androidbox keeps its files", f"{paths.HOME}\nAndroid images, instances and "
+                                                                  "profiles. Move them to another drive if this one "
+                                                                  "is running out of space.", move)))
 
         shortcuts = [("F11", "Full screen"), ("Ctrl+Shift+S", "Screenshot"), ("Ctrl+Shift+R", "Record the screen"),
                      ("Ctrl+Shift+K", "Game controls on or off"), ("Ctrl+Shift+E", "Edit game controls"),
@@ -621,6 +702,141 @@ class ProfilePage(Page):
             lines.append(row(words, None, button("Delete", lambda n=values["name"]: self.host.delete_preset(n),
                                                  kind="secondary")))
         return card(*lines)
+
+
+class MacroEditor(Modal):
+    """The steps of one macro, with the wait before each and a way to drop the ones you don't want"""
+
+    def __init__(self, parent, controller, name):
+        super().__init__(parent, f"Edit {name}",
+                         "Each step is a tap, swipe, hold or key press. Change how long it waits, or remove it.",
+                         width=700)
+        self.controller = controller
+        self.name = name
+        holder = QWidget()
+        self.rows = QVBoxLayout(holder)
+        self.rows.setContentsMargins(0, 0, 8, 0)
+        self.rows.setSpacing(6)
+        self.rows.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll = QScrollArea()
+        scroll.setWidget(holder)
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(380)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Otherwise the dialog stretches to fill the window around it
+        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.add(scroll)
+        self.action("Done")
+        self.render()
+
+    def macro(self):
+        return json.loads(macros.file(self.name).read_text())
+
+    def render(self):
+        while self.rows.count():
+            self.rows.takeAt(0).widget().deleteLater()
+        found = macros.actions(self.macro())
+        if not found:
+            self.rows.addWidget(label("This macro has no steps left.", "Muted"))
+        for number, action in enumerate(found):
+            wait = QDoubleSpinBox()
+            wait.setRange(0.0, 600.0)
+            wait.setDecimals(2)
+            wait.setSingleStep(0.1)
+            wait.setSuffix(" s")
+            wait.setValue(action["wait"])
+            wait.setFixedWidth(96)
+            wait.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            wait.editingFinished.connect(lambda n=number, box=wait: self.change_wait(n, box))
+            step = label(f"{number + 1}", "Small")
+            step.setFixedWidth(26)
+            self.rows.addWidget(row(step, label(action["label"]), None, label("Waits", "Small"), wait,
+                                    button("Remove", lambda _=False, n=number: self.remove(n), kind="secondary"),
+                                    spacing=10))
+
+    def save(self, macro):
+        macros.write(macro)
+        self.controller.macros_changed.emit()
+        self.render()
+
+    def change_wait(self, number, box):
+        macro = self.macro()
+        if abs(macros.actions(macro)[number]["wait"] - box.value()) > 0.004:
+            self.save(macros.set_wait(macro, number, box.value()))
+
+    def remove(self, number):
+        self.save(macros.remove_action(self.macro(), number))
+
+
+GAME_FRAME_RATES = (30, 60, 90, 120, 144, 240)
+GENERIC_WORDS = {"android", "app", "apps", "game", "games", "mobile", "gp", "google", "free", "lite", "prod", "release"}
+
+
+def app_name(package):
+    # Android keeps an app's real name inside its package, so this guesses one from the package's own name
+    parts = [part for part in package.split(".") if part]
+    fallback = parts[-1] if parts else package
+    word = next((part for part in reversed(parts) if part.lower() not in GENERIC_WORDS), fallback)
+    return re.sub(r"[_-]+", " ", word).strip().title() or package
+
+
+class LibraryPage(Page):
+    def __init__(self, host):
+        super().__init__(width=820)
+        self.host = host
+
+    def refresh(self, controller):
+        self.clear()
+        host = self.host
+        self.intro("Apps and games", f"What's installed on {controller.instance.name}. Open one, give a game its own "
+                                     "frame rate, or put a shortcut to it on your desktop.")
+        if not controller.on:
+            self.add(card(label("Start Android to see what's installed.", "Muted"),
+                          row(button("Start Android", controller.start), None)))
+            return
+        if controller.apps is None:
+            self.add(card(label("Looking at what's installed…", "Muted")))
+            host.run(controller.emulator.apps, lambda found: self.loaded(controller, found), lambda _: None)
+            return
+        refresh = button("Refresh", lambda: self.reload(controller), kind="secondary")
+        self.add(row(refresh, None))
+        rows = []
+        for package in controller.apps:
+            name = app_name(package)
+            own = profiles.game(package).get("fps", 0)
+            rates = [("Frame rate: same as instance", 0), *[(f"{fps} FPS", fps) for fps in GAME_FRAME_RATES]]
+            rate = choice(rates, own)
+            rate.setMinimumWidth(210)
+            rate.currentIndexChanged.connect(lambda _, p=package, box=rate: host.set_game_fps(controller, p,
+                                                                                               box.currentData()))
+            setup = "  ·  controls set up" if keymap.profile(package).exists() else ""
+            words = column(label(name, "Subheading"), label(package + setup, "Small"), spacing=2)
+            more = menu_button([
+                ("Create desktop shortcut", lambda p=package: host.shortcut_for(controller, p)),
+                (None, None),
+                ("Uninstall", lambda p=package: host.uninstall_app(controller, p)),
+            ])
+            rows.append(row(avatar(instances.initials(name), COLORS["raised"]), words, None, rate,
+                            button("Open", lambda _=False, p=package: self.open_app(controller, p)), more,
+                            spacing=10))
+        if rows:
+            self.add(card(label(f"Installed · {len(rows)}", "Section"), *rows, spacing=12))
+        else:
+            self.add(card(label("Nothing installed yet. Get apps from Google Play, or drop an APK file on the screen.",
+                                "Muted", wrap=True)))
+
+    def loaded(self, controller, found):
+        controller.apps = found
+        if self.host.page == "library" and self.host.active() is controller:
+            self.refresh(controller)
+
+    def reload(self, controller):
+        controller.apps = None
+        self.refresh(controller)
+
+    def open_app(self, controller, package):
+        controller.launch(package)
+        self.host.show_page("screen")
 
 
 class SetupPage(QWidget):

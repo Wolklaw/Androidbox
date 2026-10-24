@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 
-from .. import emulator, installer, instances, macros, paths
+from .. import emulator, installer, instances, macros, paths, profiles, system
 from ..bridge import Bridge
 from .tasks import background, on_main_thread
 
@@ -58,6 +58,11 @@ class Controller(QObject):
         self.playing = None
         self.last_clip = None
         self.skip_clip = True
+        self.apps = None
+        self.pending_launch = None
+        self.applied_fps = None
+        self.usage = None
+        self.sample = None
         self.timer = QTimer(self, interval=1500, timeout=self.poll)
         self.timer.start()
         self.video_timer = QTimer(self, singleShot=True, timeout=self.video_finished)
@@ -104,15 +109,25 @@ class Controller(QObject):
             if phase == "on" and wants_package:
                 package = self.emulator.foreground_app() or package
             token = self.emulator.grpc_token() if phase in ("booting", "on") else None
-            return phase, package, token
+            return phase, package, token, self.emulator.usage() if phase == "on" else None
         except OSError:
-            return self.phase, self.package, None
+            return self.phase, self.package, None, None
         finally:
             self.checking = False
 
-    def apply(self, phase, package, token, epoch):
+    def measure(self, sample):
+        # Processor use as a share of the whole PC, like Task Manager's, from the emulator's time between two checks
+        previous, self.sample = self.sample, sample
+        if not sample:
+            self.usage = None
+        elif previous:
+            busy = (sample[1] - previous[1]) / max(sample[0] - previous[0], 0.001) / system.host_cores()
+            self.usage = (max(0.0, min(100.0, busy * 100)), sample[2] / (1 << 30))
+
+    def apply(self, phase, package, token, sample, epoch):
         if epoch != self.epoch or self.stopping:
             return
+        self.measure(sample)
         if phase == "stuck":
             self.notify.emit(f"{self.instance.name}: Quick Boot stalled, doing a full restart", "text")
             self.stop(then=lambda: self.start(fresh=True))
@@ -130,6 +145,7 @@ class Controller(QObject):
         if package != self.package:
             self.package = package
             self.app_changed.emit()
+            self.refresh_frame_rate()
         if moved:
             self.changed.emit()
         if ready:
@@ -151,19 +167,42 @@ class Controller(QObject):
         self.stop_macro()
         self.bridge.close()
         self.bridge = None
+        self.apps = None
         self.attached.emit()
 
     def ready(self):
-        fps = self.instance.fps
-        background(lambda: self.emulator.set_frame_rate(fps))
+        self.applied_fps = None
+        self.refresh_frame_rate()
         background(self.emulator.keep_awake)
         if self.instance.block_ads:
             background(lambda: self.emulator.block_ads(True))
         if self.instance.eco:
             background(lambda: self.emulator.set_priority(True))
+        if self.instance.muted:
+            background(lambda: self.apply_mute(True))
         files, self.pending = self.pending, []
         if files:
             self.open_files(files)
+        if self.pending_launch:
+            package, self.pending_launch = self.pending_launch, None
+            # The launcher needs a moment after Android reports it has booted
+            QTimer.singleShot(3000, lambda: self.on and background(lambda: self.emulator.launch(package)))
+
+    def refresh_frame_rate(self):
+        # A game can have its own frame rate, which applies while it is in front
+        own = profiles.game(self.package).get("fps") if self.package else None
+        fps = own or self.instance.fps
+        if self.state == "on" and fps != self.applied_fps:
+            self.applied_fps = fps
+            background(lambda: self.emulator.set_frame_rate(fps))
+
+    def launch(self, package):
+        if self.on:
+            background(lambda: self.emulator.launch(package))
+            return
+        self.pending_launch = package
+        if self.state in ("off", "crashed"):
+            self.start()
 
     def start(self, wipe=False, fresh=False):
         if self.state not in ("off", "crashed"):
@@ -172,6 +211,10 @@ class Controller(QObject):
             self.image_missing.emit()
             return
         self.epoch += 1
+        if self.instance.wipe_next:
+            wipe = True
+            self.instance.wipe_next = False
+            self.save()
         self.emulator.start(wipe, fresh)
         self.phase = "booting"
         self.changed.emit()
@@ -231,6 +274,8 @@ class Controller(QObject):
         failed = [(name, reason) for name, _, ok, reason in results if not ok]
         apps = sum(1 for _, is_app, ok, _ in results if ok and is_app)
         files = sum(1 for _, is_app, ok, _ in results if ok and not is_app)
+        if apps:
+            self.apps = None
         for name, reason in failed:
             self.notify.emit(f"Couldn't add {name}: {reason}", "bad")
         done = []
@@ -341,11 +386,21 @@ class Controller(QObject):
         macro = next((macro for macro in macros.load() if macro.get("hotkey") == key), None)
         if not macro:
             return False
+        self.toggle_macro_playback(macro)
+        return True
+
+    def run_macro_named(self, name):
+        macro = next((macro for macro in macros.load() if macro["name"] == name), None)
+        if macro:
+            self.toggle_macro_playback(macro)
+        else:
+            self.notify.emit(f"The macro {name} isn't in this profile", "bad")
+
+    def toggle_macro_playback(self, macro):
         if self.playing == macro["name"]:
             self.stop_macro()
         else:
-            self.play_macro(macro, 1)
-        return True
+            self.play_macro(macro)
 
     def update_macro(self, current, **changes):
         try:
@@ -371,7 +426,8 @@ class Controller(QObject):
             self.macros_changed.emit()
         self.changed.emit()
 
-    def play_macro(self, macro, loops=1):
+    def play_macro(self, macro, loops=None):
+        loops = macro.get("loops", 1) if loops is None else loops
         if not self.bridge:
             self.notify.emit("Start Android to play macros", "text")
             return
@@ -400,6 +456,26 @@ class Controller(QObject):
         if self.on:
             background(lambda: self.emulator.set_priority(enabled))
         self.changed.emit()
+
+    def apply_mute(self, muted):
+        # Runs off the main thread, since it waits on adb
+        self.emulator.set_music_muted(muted)
+
+    def set_autostart(self, enabled):
+        self.instance.autostart = enabled
+        self.save()
+
+    def set_muted(self, muted):
+        self.instance.muted = muted
+        self.save()
+        if self.on:
+            background(lambda: self.apply_mute(muted))
+        self.changed.emit()
+
+    def hush(self, quiet):
+        # The boss key silences every instance without changing which of them are muted for good
+        if self.on and not self.instance.muted:
+            background(lambda: self.apply_mute(quiet))
 
     def set_block_ads(self, enabled):
         self.instance.block_ads = enabled

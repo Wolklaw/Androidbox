@@ -1,6 +1,7 @@
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit
 
+from .files import FileBrowser
 from .widgets import Modal, label, row
 
 PLACES = {
@@ -80,6 +81,24 @@ class ScreenActions:
     def toggle_sync(self):
         self.set_pref("sync_input", not self.prefs["sync_input"])
         self.toast("Input now goes to every running instance" if self.prefs["sync_input"] else "Input sync off")
+
+    def toggle_mute(self):
+        controller = self.active()
+        if controller:
+            controller.set_muted(not controller.instance.muted)
+            self.toast(f"{controller.instance.name} is muted" if controller.instance.muted else "Sound is back on")
+        self.refresh_tools()
+
+    def toggle_pin(self):
+        self.set_pref("always_on_top", not self.prefs["always_on_top"])
+        self.toast("Androidbox stays on top" if self.prefs["always_on_top"] else "Androidbox no longer stays on top")
+
+    def pull_files(self):
+        controller = self.live()
+        if controller:
+            FileBrowser(self.dialog_parent(), controller, self.toast).open()
+        else:
+            self.toast("Start Android first")
 
     def toggle_game_controls(self):
         self.set_pref("game_controls", not self.prefs["game_controls"])

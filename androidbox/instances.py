@@ -13,6 +13,10 @@ from . import installer, paths
 CONSOLE_PORTS = [5580, 5582, 5584, 5578, 5576, 5574, 5572, 5570, 5568, 5566, 5564, 5562, 5560, 5558, 5556, 5554]
 GRPC_BASE = 8554
 FRAME_RATES = (60, 90, 120, 144, 240)
+DISK_SIZES = (16, 32, 64, 128)
+# What the emulator's -gpu option takes. Hardware is the fast one, the others are there for GPUs that crash it
+GPU_MODES = {"host": "Graphics card", "auto": "Automatic", "swangle": "Software (slow)"}
+DEFAULT_GPU = "host"
 BACKUP_SKIPS = {"snapshots", "hardware-qemu.ini.lock", "multiinstance.lock", "hardware-qemu.ini",
                 "emu-launch-params.txt"}
 CHUNK = 1 << 22
@@ -20,9 +24,12 @@ CHUNK = 1 << 22
 RESOLUTIONS = {
     "Phone": (1080, 1920, 420),
     "Phone (light)": (720, 1280, 320),
+    "Phone (tall)": (1080, 2400, 420),
     "Tablet": (1920, 1080, 240),
     "Tablet (light)": (1600, 900, 240),
+    "Tablet (QHD)": (2560, 1440, 320),
 }
+SIZE_LIMITS = {"width": (320, 3840), "height": (320, 3840), "density": (120, 640)}
 
 HARDWARE = {
     "avd.ini.encoding": "UTF-8",
@@ -31,9 +38,7 @@ HARDWARE = {
     "tag.display": "Google Play",
     "abi.type": installer.IMAGE_ABI,
     "hw.cpu.arch": installer.IMAGE_ABI,
-    "disk.dataPartition.size": "16G",
     "hw.gpu.enabled": "yes",
-    "hw.gpu.mode": "auto",
     "hw.keyboard": "yes",
     "hw.mainKeys": "no",
     "hw.sdCard": "no",
@@ -59,6 +64,12 @@ class Instance:
     camera: bool = False
     block_ads: bool = True
     eco: bool = False
+    disk: int = 16
+    gpu: str = DEFAULT_GPU
+    muted: bool = False
+    autostart: bool = False
+    # A change to storage only takes effect on a fresh data partition, so the next start erases the old one
+    wipe_next: bool = False
 
     @property
     def android(self):
@@ -92,6 +103,14 @@ class Instance:
     @property
     def initials(self):
         return initials(self.name)
+
+    @property
+    def gpu_mode(self):
+        return self.gpu if self.gpu in GPU_MODES else DEFAULT_GPU
+
+    @property
+    def graphics(self):
+        return GPU_MODES[self.gpu_mode]
 
 
 def initials(name):
@@ -137,6 +156,8 @@ def recover(instances):
             cores=number(values, "hw.cpu.ncore", 4), ram=number(values, "hw.ramSize", 4096),
             width=number(values, "hw.lcd.width", 1080), height=number(values, "hw.lcd.height", 1920),
             density=number(values, "hw.lcd.density", 420), fps=number(values, "hw.lcd.vsync", 60),
+            disk=number({"size": values.get("disk.dataPartition.size", "").rstrip("Gg")}, "size", 16),
+            gpu=values.get("hw.gpu.mode", DEFAULT_GPU),
             api=api if api in installer.ANDROID_VERSIONS else installer.DEFAULT_API,
             camera=values.get("hw.camera.front") == "webcam0"))
         known.add(marker.stem)
@@ -274,6 +295,8 @@ def write_avd(instance):
         "image.sysdir.1": f"{installer.image_dir(instance.api)}\\",
         "hw.camera.front": "webcam0" if instance.camera else "none",
         "hw.camera.back": "webcam0" if instance.camera else "none",
+        "disk.dataPartition.size": f"{instance.disk}G",
+        "hw.gpu.mode": instance.gpu_mode,
         "hw.cpu.ncore": str(instance.cores),
         "hw.ramSize": str(instance.ram),
         "hw.lcd.width": str(instance.width),

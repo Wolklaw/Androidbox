@@ -37,7 +37,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-HOME = Path(os.environ["LOCALAPPDATA"]) / "Androidbox"
+# This script lives in the claude folder inside Androidbox's own folder, wherever that has been moved to
+HOME = Path(__file__).resolve().parent.parent
 ADB = HOME / "sdk" / "platform-tools" / "adb.exe"
 ENVIRONMENT = {**os.environ, "ANDROID_ADB_SERVER_PORT": "{ADB_SERVER_PORT}"}
 CONSOLE_PORTS = {CONSOLE_PORTS}
