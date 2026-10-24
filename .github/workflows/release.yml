@@ -46,9 +46,7 @@ jobs:
         if: steps.version.outputs.released == 'false'
         shell: pwsh
         run: |
-          $setup = Join-Path $env:RUNNER_TEMP "innosetup.exe"
-          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $setup -UserAgent "Mozilla/5.0"
-          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait
+          choco install innosetup --version=6.7.1 --no-progress -y
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup did not install" }
 
       - name: Build the app and the installer
