@@ -100,6 +100,9 @@ class ScreenActions:
         else:
             self.toast("Start Android first")
 
+    def check_now(self):
+        self.check_for_updates(manual=True)
+
     def toggle_game_controls(self):
         self.set_pref("game_controls", not self.prefs["game_controls"])
         self.toast("Game controls on" if self.prefs["game_controls"] else "Game controls off")

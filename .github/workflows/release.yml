@@ -1,0 +1,83 @@
+name: Release
+
+# Every push to main that raises the version in androidbox/__init__.py builds the installer and publishes it as a
+# release. Installed copies of Androidbox look for the newest release and offer to update themselves from it.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version and see whether it is already released
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Select-String -Path androidbox/__init__.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
+          gh release view "v$version" --json tagName *> $null
+          $released = if ($LASTEXITCODE -eq 0) { "true" } else { "false" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "released=$released" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $version, already released: $released"
+
+      - uses: actions/setup-python@v5
+        if: steps.version.outputs.released == 'false'
+        with:
+          python-version: "3.13"
+
+      - name: Install Inno Setup
+        if: steps.version.outputs.released == 'false'
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP "innosetup.exe"
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $setup -UserAgent "Mozilla/5.0"
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup did not install" }
+
+      - name: Build the app and the installer
+        if: steps.version.outputs.released == 'false'
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Check that the built app starts
+        if: steps.version.outputs.released == 'false'
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:ANDROIDBOX_HOME = Join-Path $env:RUNNER_TEMP "androidbox-smoke"
+          $app = Start-Process -FilePath "dist\Androidbox\Androidbox.exe" -PassThru
+          Start-Sleep -Seconds 12
+          if ($app.HasExited) { throw "The built app quit on start, with exit code $($app.ExitCode)" }
+          if (Test-Path (Join-Path $env:ANDROIDBOX_HOME "data\crash.log")) {
+            Get-Content (Join-Path $env:ANDROIDBOX_HOME "data\crash.log")
+            throw "The built app crashed on start"
+          }
+          Stop-Process -Id $app.Id -Force
+
+      - name: Publish the release
+        if: steps.version.outputs.released == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $previous = gh release view --json tagName --jq .tagName 2>$null
+          $range = if ($previous) { "$previous..HEAD" } else { "HEAD" }
+          $notes = (git log $range --no-merges --format="- %s" | Out-String).Trim()
+          Set-Content -Path notes.md -Value $notes -Encoding utf8
+          gh release create "v$version" "dist/Androidbox-Setup-$version.exe" --title "Androidbox $version" --notes-file notes.md --target $env:GITHUB_SHA

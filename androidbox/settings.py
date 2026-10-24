@@ -5,6 +5,7 @@ from . import paths, profiles
 LOCAL = {
     "selected": None,
     "check_updates": True,
+    "auto_update": True,
     "skipped_version": "",
     "claude_access": False,
     "close_to_tray": False,

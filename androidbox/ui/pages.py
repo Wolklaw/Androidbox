@@ -581,6 +581,10 @@ class InstancesPage(Page):
         fps.toggled.connect(lambda on: host.set_pref("show_fps", on))
         updates = Toggle(host.prefs["check_updates"])
         updates.toggled.connect(lambda on: host.set_pref("check_updates", on))
+        automatic = Toggle(host.prefs["auto_update"] and system.can_update())
+        automatic.setEnabled(system.can_update())
+        automatic.toggled.connect(lambda on: host.set_pref("auto_update", on))
+        check_now = button("Check now", host.check_now, kind="secondary")
         access = Toggle(host.prefs["claude_access"])
         access.toggled.connect(lambda on: host.set_pref("claude_access", on))
         self.add(card(label("Everywhere", "Section"),
@@ -590,9 +594,16 @@ class InstancesPage(Page):
                       setting("Show FPS and system use", "Show frames per second in the corner of the screen, with how "
                                                          "much processor and memory the emulator is using.", fps),
                       divider(),
-                      setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub once "
-                                                   "per start whether a newer release is out.", updates),
-                      divider(),
+                      setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub when it "
+                                                   "starts, and every few hours while it runs, whether a newer "
+                                                   "version is out.", updates), divider(),
+                      setting("Download updates automatically", "Fetches a new version in the background and checks "
+                                                                "it against GitHub's checksum. Androidbox then asks "
+                                                                "before restarting to install it, so it never "
+                                                                "restarts on its own." + ("" if system.can_update() else
+                                                                " Only the installed app can do this."),
+                              automatic), divider(),
+                      setting("Look for an update now", "Checks GitHub right away.", check_now), divider(),
                       setting("Let Claude Code control Android", "Lets Claude Code on this PC tap, type, take "
                                                                   "screenshots and install apps on your running "
                                                                   "instances to test them, through a helper "

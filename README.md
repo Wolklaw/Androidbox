@@ -43,8 +43,9 @@ stores stays in one folder you can delete.
 5. Press **Start Android**.
 
 Closing Androidbox saves and shuts down every running Android, unless you choose to keep it running in
-the tray. To update, run the newer installer over the old one. Your instances and settings stay where
-they are, and an older per-user install is replaced.
+the tray. Androidbox keeps itself up to date (see [Updates](#updates)), and you can also run a newer
+installer over the old one. Your instances and settings stay where they are, and an older per-user install
+is replaced.
 
 ## Features
 
@@ -125,6 +126,18 @@ The **Apps** page lists what's installed on an instance. Open a game, give it it
 applies while it's in front, uninstall it, or put a shortcut to it on your desktop. A shortcut starts the
 instance if it's off and opens that game, even when Androidbox is already running.
 
+### Updates
+
+Androidbox checks GitHub for a newer release when it starts and every few hours while it runs. When one
+is out, it downloads the installer in the background and checks it against the checksum GitHub published
+for it. It then asks whether to restart and install: Androidbox saves your Androids first, Windows asks
+for permission if it's installed in `Program Files`, and Androidbox opens again afterwards. It never
+restarts on its own. Turn the checks or the automatic download off on the **All instances** page, where
+**Look for an update now** also checks on demand.
+
+Every push to `main` that raises the version publishes a new release, which is how an update gets to
+you.
+
 ### Stays out of the way
 
 - **Tray**: keep Android running when you close the window, so idle games keep going. Quit from the
@@ -161,7 +174,7 @@ Turn the switch off and the helper is deleted, and it refuses to run while the s
 - Full screen, an FPS counter that also shows how much processor and memory the emulator uses, and eco
   mode for idle games
 - Move everything Androidbox stores to another drive when your C: drive runs short
-- A quiet check for new Androidbox releases that you can turn off
+- Automatic updates, with a check for new releases that you can turn off
 
 <p align="center"><img src="docs/settings.png" alt="Per-instance settings" width="820"></p>
 
@@ -329,7 +342,10 @@ This creates a virtual environment, installs the packages in `requirements.txt` 
 the app with PyInstaller, and wraps it in a setup wizard with [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 (`winget install JRSoftware.InnoSetup`). The installer lands in `dist\Androidbox-Setup-<version>.exe`, and
 the version comes from `androidbox/__init__.py`. The wizard's artwork is drawn by `installer/make_art.py`,
-and the PNGs it writes are committed. To run from source instead:
+and the PNGs it writes are committed. Raise `VERSION` and push to `main`, and
+`.github/workflows/release.yml` builds the installer the same way and publishes it as release `v<version>`,
+which installed copies then offer to download. Dependencies are pinned in `requirements.txt` so that
+release builds match what was tested. To run from source instead:
 
 ```powershell
 python -m venv .venv
@@ -351,7 +367,7 @@ python -m venv .venv
 - `androidbox/system.py`, `relocate.py`, `hotkeys.py`: what the PC has, shortcuts and Windows startup,
   moving the files to another drive, and shortcuts that work in any program
 - `androidbox/claude.py`: the Claude Code helper script
-- `androidbox/updates.py`: asks GitHub whether a newer release is out
+- `androidbox/updates.py`: asks GitHub for the newest release, then downloads and verifies its installer
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
   Android, and `files.py` browses Android's storage
 - `androidbox/proto/`: bindings generated from the emulator's gRPC definition

@@ -33,6 +33,7 @@ PAGES = {
 
 GLOBAL_PAGES = ("instances", "profile")
 
+UPDATE_CHECK_HOURS = 6
 STATES = {"on": "Running", "booting": "Starting…", "stopping": "Shutting down…", "crashed": "Stopped unexpectedly"}
 BACKUP_FILTER = "Androidbox backup (*.androidbox)"
 LAYOUT_FILTER = "Game controls (*.json)"
@@ -68,6 +69,9 @@ class MainWindow(QMainWindow, ScreenActions):
         self.boss_hidden = False
         self.hidden_popouts = []
         self.told_about_tray = False
+        self.pending_update = None
+        self.offered_update = None
+        self.update_timer = QTimer(self, interval=UPDATE_CHECK_HOURS * 3600 * 1000, timeout=self.check_for_updates)
         self.hotkeys = Hotkeys(QApplication.instance())
         tasks.relay.on_error = self.report
 
@@ -240,6 +244,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.select(selected if selected in self.controllers else self.instances[0].id)
         self.check_acceleration()
         self.check_for_updates()
+        self.update_timer.start()
         if profiles.sync_missing():
             self.toast("Your sync folder isn't available. Using this PC's copy of your profiles for now", "bad")
         for controller in self.controllers.values():
@@ -496,21 +501,98 @@ class MainWindow(QMainWindow, ScreenActions):
         self.run(lambda: browser.set_up(controller.emulator, report), finished,
                  lambda error: progress.done("Couldn't set up Firefox", str(error)))
 
-    def check_for_updates(self):
-        if not self.prefs["check_updates"]:
+    def check_for_updates(self, manual=False):
+        if not (manual or self.prefs["check_updates"]):
             return
 
-        def found(result):
-            version, url = result
-            if not updates.newer(version) or self.prefs["skipped_version"] == version:
+        def found(release):
+            if not updates.newer(release.version):
+                if manual:
+                    self.toast(f"Androidbox {VERSION} is the newest version", "good")
                 return
-            modal = Modal(self.dialog_parent(), f"Androidbox {version} is out",
-                          f"You have {VERSION}. The new version is on GitHub, ready to download.")
-            modal.action("Skip this version", lambda: self.set_pref("skipped_version", version), kind="secondary")
-            modal.action("Download", lambda: QDesktopServices.openUrl(QUrl(url)))
-            modal.open()
+            if not manual and self.prefs["skipped_version"] == release.version:
+                return
+            if self.pending_update and self.pending_update[0].version == release.version:
+                return self.offer_update(manual)
+            if not (release.installable and system.can_update()):
+                self.offer_download_page(release)
+            elif self.prefs["auto_update"] and not manual:
+                self.fetch_update(release, quiet=True)
+            else:
+                self.offer_update_download(release)
 
-        self.run(updates.latest, found, lambda _: None)
+        def failed(error):
+            if manual:
+                self.toast("Couldn't reach GitHub. Check your internet connection", "bad")
+
+        self.run(updates.latest, found, failed)
+
+    def notes_for(self, release):
+        return f"\n\nWhat's new:\n{release.notes}" if release.notes else ""
+
+    def offer_download_page(self, release):
+        # A copy run from source, or a release without a checksum, is downloaded by hand
+        modal = Modal(self.dialog_parent(), f"Androidbox {release.version} is out",
+                      f"You have {VERSION}. The new version is on GitHub, ready to download.{self.notes_for(release)}")
+        modal.action("Skip this version", lambda: self.set_pref("skipped_version", release.version), kind="secondary")
+        modal.action("Download", lambda: QDesktopServices.openUrl(QUrl(release.page)))
+        modal.open()
+
+    def offer_update_download(self, release):
+        modal = Modal(self.dialog_parent(), f"Androidbox {release.version} is out",
+                      f"You have {VERSION}. Androidbox can download the new version now, check it against GitHub's "
+                      f"checksum, and then ask before restarting to install it.{self.notes_for(release)}")
+        modal.action("Skip this version", lambda: self.set_pref("skipped_version", release.version), kind="secondary")
+        modal.action("Download", lambda: self.fetch_update(release, quiet=False))
+        modal.open()
+
+    def fetch_update(self, release, quiet):
+        progress = None if quiet else Progress(self.dialog_parent(), f"Androidbox {release.version}",
+                                               "Downloading the update from GitHub.")
+        last = [0.0]
+
+        def report(done, total):
+            now = time.monotonic()
+            if progress and (now - last[0] >= 0.1 or done >= total):
+                last[0] = now
+                self.later(lambda: progress.update_progress(f"{done / 1e6:,.0f} of {total / 1e6:,.0f} MB",
+                                                            done / max(total, 1)))
+
+        def fetched(file):
+            if progress:
+                progress.close_modal()
+            self.pending_update = (release, file)
+            self.offer_update(manual=not quiet)
+
+        def failed(error):
+            if progress:
+                progress.done("The update didn't download", f"{error}. Try again later, or get it from GitHub.")
+
+        self.run(lambda: updates.download(release, report), fetched, failed)
+
+    def offer_update(self, manual=False):
+        # Offered once a session, and only where it will be seen: a copy hidden in the tray shows a notice instead
+        release, file = self.pending_update
+        if self.offered_update == release.version and not manual:
+            return
+        if not self.isVisible():
+            if self.tray_active() and self.offered_update != release.version:
+                self.offered_update = release.version
+                self.tray.showMessage(f"Androidbox {release.version} is ready", "Open Androidbox to install it.",
+                                      QSystemTrayIcon.MessageIcon.Information, 8000)
+            return
+        self.offered_update = release.version
+        modal = Modal(self.dialog_parent(), f"Androidbox {release.version} is ready",
+                      "Androidbox saves your Androids, installs the update and opens again. Windows may ask for "
+                      f"permission first.{self.notes_for(release)}")
+        modal.action("Later", kind="secondary")
+        modal.action("Restart and update", self.install_update)
+        modal.open()
+
+    def install_update(self):
+        release, file = self.pending_update
+        system.install_update(file)
+        self.quit_app()
 
     def export_controls(self, package):
         file, _ = QFileDialog.getSaveFileName(self, "Export game controls", str(documents() / f"{package}.json"),
@@ -1133,6 +1215,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.hidden_popouts = []
         ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
         self.raise_()
+        if self.pending_update:
+            QTimer.singleShot(600, self.offer_update)
 
     def hide_to_tray(self):
         self.hidden_popouts = [popout for popout in self.popouts.values() if popout.isVisible()]

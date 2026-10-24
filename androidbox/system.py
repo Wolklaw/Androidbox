@@ -141,7 +141,38 @@ def shortcut(file, arguments, description):
         raise OSError(result.stderr.strip() or "Windows couldn't create the shortcut")
 
 
-def restart():
-    # The new copy has to wait until this one has let go of the single-instance lock
-    subprocess.Popen(["cmd", "/c", f'timeout /t 2 /nobreak >nul & start "" {command()}'],
-                     creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS, close_fds=True)
+def after_exit(script, settings):
+    """Runs PowerShell commands once this process has ended, so they never meet its single-instance lock.
+
+    DETACHED_PROCESS would stop PowerShell from starting at all, and the helper doesn't need it to outlive us."""
+    subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+                      "Wait-Process -Id $env:ANDROIDBOX_WAIT_FOR -ErrorAction SilentlyContinue; " + script],
+                     env={**os.environ, "ANDROIDBOX_WAIT_FOR": str(os.getpid()), **settings}, close_fds=True,
+                     creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
+START_AGAIN = ("if ($env:RELAUNCH_ARGUMENTS) "
+               "{ Start-Process -FilePath $env:RELAUNCH_TARGET -ArgumentList $env:RELAUNCH_ARGUMENTS } "
+               "else { Start-Process -FilePath $env:RELAUNCH_TARGET }")
+
+
+def restart(relaunch=None):
+    target, prefix = relaunch or launcher()
+    after_exit(START_AGAIN, {"RELAUNCH_TARGET": target, "RELAUNCH_ARGUMENTS": prefix})
+
+
+def can_update():
+    # Only the installed app updates itself. A copy run from source is updated with git
+    return bool(getattr(sys, "frozen", False))
+
+
+def install_update(installer, relaunch=None):
+    """Once this copy has quit, runs the new installer and starts Androidbox again.
+
+    Windows asks permission when Androidbox is in Program Files. If that's refused, or the install fails, the
+    copy that was already there starts again, and the update is offered next time."""
+    target, prefix = relaunch or launcher()
+    install = ("Start-Process -FilePath $env:UPDATE_INSTALLER -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART' "
+               "-Wait -ErrorAction SilentlyContinue; ")
+    after_exit(install + START_AGAIN, {"UPDATE_INSTALLER": str(installer), "RELAUNCH_TARGET": target,
+                                       "RELAUNCH_ARGUMENTS": prefix})
