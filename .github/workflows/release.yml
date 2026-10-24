@@ -34,6 +34,8 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "released=$released" >> $env:GITHUB_OUTPUT
           Write-Host "Version $version, already released: $released"
+          # gh exits with 1 when the release does not exist yet, and that must not fail the step
+          exit 0
 
       - uses: actions/setup-python@v5
         if: steps.version.outputs.released == 'false'
