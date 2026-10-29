@@ -12,7 +12,7 @@ class ToolRail(QWidget):
         super().__init__()
         self.setObjectName("Tools")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setFixedWidth(56)
+        self.compact = False
         self.buttons = {}
         groups = [
             [("back", "Back", lambda: host.send_key("GoBack")),
@@ -62,8 +62,20 @@ class ToolRail(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
         self.host = host
+        self.layout_margins = layout
+        self.apply_compact(False)
+
+    def apply_compact(self, compact):
+        self.compact = compact
+        self.setFixedWidth(40 if compact else 56)
+        margin = 4 if compact else 8
+        self.layout_margins.setContentsMargins(margin, 10, margin, 10)
+        for tool in self.buttons.values():
+            tool.set_compact(compact)
 
     def refresh(self, controller, prefs, editing):
+        if prefs["compact_tools"] != self.compact:
+            self.apply_compact(prefs["compact_tools"])
         live = controller is not None and controller.on
         for name, tool in self.buttons.items():
             tool.setEnabled(live or name in ALWAYS_ON)

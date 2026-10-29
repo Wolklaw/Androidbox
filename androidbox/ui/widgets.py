@@ -275,17 +275,21 @@ class ToolButton(QToolButton):
         self.setText(glyph)
         self.setToolTip(tooltip)
         self.setCheckable(checkable)
-        self.setFixedSize(40, 40)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.set_compact(False)
+        if on_click:
+            self.clicked.connect(on_click)
+
+    def set_compact(self, compact):
+        size, glyph_size = (32, 15) if compact else (40, 17)
+        self.setFixedSize(size, size)
         self.setStyleSheet(f"""
             QToolButton {{ border: none; border-radius: 8px; color: {COLORS["muted"]}; background: transparent;
-                           {glyph_css(17)} }}
+                           {glyph_css(glyph_size)} }}
             QToolButton:hover {{ background: {COLORS["hover"]}; color: {COLORS["bright"]}; }}
             QToolButton:checked {{ background: {COLORS["selected"]}; color: {COLORS["accent"]}; }}
             QToolButton:disabled {{ color: {COLORS["dim"]}; }}
         """)
-        if on_click:
-            self.clicked.connect(on_click)
 
 
 class Toast(QLabel):

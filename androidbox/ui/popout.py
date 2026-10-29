@@ -62,9 +62,11 @@ class PopoutWindow(QWidget, ScreenActions):
     def toggle_fullscreen(self):
         if self.isFullScreen():
             self.screen.tools.show()
+            self.screen.set_edge_to_edge(False)
             self.showNormal()
             return
         self.screen.tools.hide()
+        self.screen.set_edge_to_edge(True)
         self.showFullScreen()
         self.toast("Press F11 to leave full screen")
 

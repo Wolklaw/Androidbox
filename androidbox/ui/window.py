@@ -1310,6 +1310,7 @@ class MainWindow(QMainWindow, ScreenActions):
         if self.isFullScreen():
             for part in chrome:
                 part.show()
+            self.screen.set_edge_to_edge(False)
             if self.was_maximized:
                 self.showMaximized()
             else:
@@ -1321,6 +1322,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.was_maximized = self.isMaximized()
         for part in chrome:
             part.hide()
+        self.screen.set_edge_to_edge(True)
         self.showFullScreen()
         self.toast("Press F11 to leave full screen")
 

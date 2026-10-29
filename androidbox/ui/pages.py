@@ -260,12 +260,16 @@ class ScreenPage(QWidget):
         layout.setSpacing(0)
         self.holder = QWidget()
         self.holder.setObjectName("Page")
-        inner = QVBoxLayout(self.holder)
-        inner.setContentsMargins(16, 16, 16, 16)
-        inner.addWidget(self.stack)
+        self.holder_layout = QVBoxLayout(self.holder)
+        self.holder_layout.setContentsMargins(16, 16, 16, 16)
+        self.holder_layout.addWidget(self.stack)
         layout.addWidget(self.holder, 1)
         layout.addWidget(self.tools)
         self.phone.editing_changed.connect(lambda _: host.refresh_tools())
+
+    def set_edge_to_edge(self, flag):
+        self.holder_layout.setContentsMargins(0, 0, 0, 0) if flag else \
+            self.holder_layout.setContentsMargins(16, 16, 16, 16)
 
     def refresh(self, controller, popped=False):
         if controller.on and not popped:
@@ -579,6 +583,8 @@ class InstancesPage(Page):
         sync.toggled.connect(lambda on: host.set_pref("sync_input", on))
         fps = Toggle(host.prefs["show_fps"])
         fps.toggled.connect(lambda on: host.set_pref("show_fps", on))
+        compact = Toggle(host.prefs["compact_tools"])
+        compact.toggled.connect(lambda on: host.set_pref("compact_tools", on))
         updates = Toggle(host.prefs["check_updates"])
         updates.toggled.connect(lambda on: host.set_pref("check_updates", on))
         automatic = Toggle(host.prefs["auto_update"] and system.can_update())
@@ -594,6 +600,8 @@ class InstancesPage(Page):
                       setting("Show FPS and system use", "Show frames per second in the corner of the screen, with how "
                                                          "much processor and memory the emulator is using.", fps),
                       divider(),
+                      setting("Compact toolbar", "Make the row of tool buttons on the right of the screen narrower.",
+                              compact), divider(),
                       setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub when it "
                                                    "starts, and every few hours while it runs, whether a newer "
                                                    "version is out.", updates), divider(),

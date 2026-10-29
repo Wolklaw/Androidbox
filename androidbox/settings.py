@@ -11,6 +11,7 @@ LOCAL = {
     "close_to_tray": False,
     "boss_key": "",
     "always_on_top": False,
+    "compact_tools": False,
 }
 
 PROFILE = {
