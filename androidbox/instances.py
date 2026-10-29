@@ -28,16 +28,13 @@ RESOLUTIONS = {
     "Tablet": (1920, 1080, 240),
     "Tablet (light)": (1600, 900, 240),
     "Tablet (QHD)": (2560, 1440, 320),
+    "OUYA": (1920, 1080, 320),
+    "GameStick": (1280, 720, 213),
 }
 SIZE_LIMITS = {"width": (320, 3840), "height": (320, 3840), "density": (120, 640)}
 
 HARDWARE = {
     "avd.ini.encoding": "UTF-8",
-    "PlayStore.enabled": "true",
-    "tag.id": installer.IMAGE_TAG,
-    "tag.display": "Google Play",
-    "abi.type": installer.IMAGE_ABI,
-    "hw.cpu.arch": installer.IMAGE_ABI,
     "hw.gpu.enabled": "yes",
     "hw.keyboard": "yes",
     "hw.mainKeys": "no",
@@ -288,11 +285,18 @@ def write_avd(instance):
             if key:
                 config[key.strip()] = value.strip()
     before = {key: value for key, value in config.items() if key != "avd.ini.displayname"}
+    tag = installer.image_tag(instance.api)
+    abi = installer.image_abi(instance.api)
     config.update(HARDWARE)
     config.update({
         "AvdId": instance.id,
         "avd.ini.displayname": instance.name,
         "image.sysdir.1": f"{installer.image_dir(instance.api)}\\",
+        "tag.id": tag,
+        "tag.display": installer.TAG_LABELS.get(tag, tag),
+        "abi.type": abi,
+        "hw.cpu.arch": installer.ARCH_FAMILY[abi],
+        "PlayStore.enabled": "true" if installer.has_playstore(instance.api) else "false",
         "hw.camera.front": "webcam0" if instance.camera else "none",
         "hw.camera.back": "webcam0" if instance.camera else "none",
         "disk.dataPartition.size": f"{instance.disk}G",

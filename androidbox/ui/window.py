@@ -737,6 +737,8 @@ class MainWindow(QMainWindow, ScreenActions):
         android = QComboBox()
         android.addItem("Android 16 (recommended)", "36")
         android.addItem("Android 11 (runs older 32-bit games)", "30")
+        android.addItem("Android 4.1 — for OUYA/GameStick games (experimental, slow, no Play Store)",
+                        installer.LEGACY_API)
         storage = QComboBox()
         for size in instances.DISK_SIZES:
             storage.addItem(f"{size} GB" + ("  (big games need more)" if size == instances.DISK_SIZES[0] else ""), size)

@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QImage, QKeySequence, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QWidget
 
-from .. import gamepad, keymap, macros
+from .. import gamepad, installer, keymap, macros
 from ..bridge import KEYDOWN, KEYUP
 from .theme import COLORS
 from .widgets import button, text_font
@@ -46,6 +46,16 @@ ANDROID_KEYS = {
 PAD_KEYS = {
     "Pad A": "Enter", "Pad B": "GoBack", "Pad Start": "GoHome", "Pad Back": "AppSwitch",
     "Pad Up": "ArrowUp", "Pad Down": "ArrowDown", "Pad Left": "ArrowLeft", "Pad Right": "ArrowRight",
+}
+
+# Linux evdev button codes (BTN_A and friends). Only the emulator's old "goldfish" input device,
+# which Androidbox's legacy OUYA/GameStick image uses, understands these as real gamepad buttons;
+# the modern images it otherwise runs don't, so there every pad button keeps acting like a remote
+# (Pad A opens, Pad B goes back) instead
+GAMEPAD_CODES = {
+    "Pad A": 0x130, "Pad B": 0x131, "Pad X": 0x133, "Pad Y": 0x134,
+    "Pad LB": 0x136, "Pad RB": 0x137, "Pad LT": 0x138, "Pad RT": 0x139,
+    "Pad Back": 0x13a, "Pad Start": 0x13b, "Pad LS": 0x13d, "Pad RS": 0x13e,
 }
 
 MOUSE_BUTTONS = {Qt.MouseButton.LeftButton: "Mouse Left", Qt.MouseButton.RightButton: "Mouse Right"}
@@ -671,6 +681,11 @@ class PhoneView(QWidget):
             return
         if not self.bridge or self.handle(name, down):
             return
+        if self.controller.instance.api == installer.LEGACY_API:
+            code = GAMEPAD_CODES.get(name)
+            if code is not None:
+                self.bridge.button(code, down)
+                return
         key = PAD_KEYS.get(name)
         if key:
             self.bridge.key(key, KEYDOWN if down else KEYUP)

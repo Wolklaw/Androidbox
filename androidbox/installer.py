@@ -13,15 +13,39 @@ STABLE = "channel-0"
 
 IMAGE_TAG = "google_apis_playstore"
 IMAGE_ABI = "x86_64"
-IMAGE_REPOSITORY = f"{REPOSITORY}sys-img/{IMAGE_TAG}/"
-# Android 15 stays known so existing instances keep running, but new instances get 16 or 11
-ANDROID_VERSIONS = {"36": "Android 16", "35": "Android 15", "30": "Android 11"}
+# OUYA and GameStick ran Android 4.1 (API 16), years before Google Play system images existed, and
+# their games are ARM so they need a real ARM image rather than the x86-plus-translator Androidbox
+# otherwise uses: that translator is already known to be unreliable with older ARM-only games.
+LEGACY_API = "16"
+LEGACY_TAG = "google_apis"
+LEGACY_ABI = "armeabi-v7a"
+ARCH_FAMILY = {"x86_64": "x86_64", "x86": "x86", "armeabi-v7a": "arm", "arm64-v8a": "arm64"}
+TAG_LABELS = {"google_apis_playstore": "Google Play", "google_apis": "Google APIs"}
+# Android 15 stays known so existing instances keep running, but new instances get 16, 11 or the legacy image
+ANDROID_VERSIONS = {"36": "Android 16", "35": "Android 15", "30": "Android 11",
+                    LEGACY_API: "Android 4.1 (OUYA / GameStick, experimental)"}
 DEFAULT_API = "36"
 IMAGE_NAME = ANDROID_VERSIONS[DEFAULT_API]
 
 
+def image_tag(api):
+    return LEGACY_TAG if api == LEGACY_API else IMAGE_TAG
+
+
+def image_abi(api):
+    return LEGACY_ABI if api == LEGACY_API else IMAGE_ABI
+
+
+def image_repository(api):
+    return f"{REPOSITORY}sys-img/{image_tag(api)}/"
+
+
+def has_playstore(api):
+    return image_tag(api) == IMAGE_TAG
+
+
 def image_dir(api):
-    return Path("system-images", f"android-{api}", IMAGE_TAG, IMAGE_ABI)
+    return Path("system-images", f"android-{api}", image_tag(api), image_abi(api))
 
 
 def image_installed(api):
@@ -53,13 +77,14 @@ def is_installed():
 
 def resolve(api=DEFAULT_API, tools=True):
     repository = fetch_xml(REPOSITORY + "repository2-3.xml")
-    images = fetch_xml(IMAGE_REPOSITORY + "sys-img2-3.xml")
+    image_repo = image_repository(api)
+    images = fetch_xml(image_repo + "sys-img2-3.xml")
     packages = []
     if tools:
         packages += [newest(repository, "platform-tools", REPOSITORY, "adb", REQUIRED[0]),
                      newest(repository, "emulator", REPOSITORY, "the emulator", REQUIRED[1])]
-    packages.append(newest(images, f"system-images;android-{api};{IMAGE_TAG};{IMAGE_ABI}",
-                           IMAGE_REPOSITORY, ANDROID_VERSIONS[api], image_dir(api)))
+    packages.append(newest(images, f"system-images;android-{api};{image_tag(api)};{image_abi(api)}",
+                           image_repo, ANDROID_VERSIONS[api], image_dir(api)))
     texts = {**licenses(images), **licenses(repository)}
     return packages, {p.license: texts.get(p.license, "") for p in packages}
 
