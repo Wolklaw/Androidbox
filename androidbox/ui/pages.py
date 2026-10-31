@@ -634,6 +634,9 @@ class InstancesPage(Page):
         boss.setFixedWidth(170)
         boss.editingFinished.connect(lambda: host.set_boss_key(boss.keySequence().toString()))
         move = button("Move…", host.move_files, kind="secondary")
+        default_storage = host.prefs["default_storage_path"]
+        choose_storage = button("Choose…", host.choose_default_storage, kind="secondary")
+        default_storage_default = button("Default", host.clear_default_storage, kind="secondary")
         self.add(card(label("This PC", "Section"),
                       setting("Keep running in the tray", "Closing the window hides Androidbox and leaves Android "
                                                           "running, so idle games keep going. Quit from the tray "
@@ -645,7 +648,12 @@ class InstancesPage(Page):
                                           "Ctrl, Alt, Shift or Win with a key.", boss), divider(),
                       setting("Where Androidbox keeps its files", f"{paths.HOME}\nAndroid images, instances and "
                                                                   "profiles. Move them to another drive if this one "
-                                                                  "is running out of space.", move)))
+                                                                  "is running out of space.", move), divider(),
+                      setting("Default location for new instances",
+                              (default_storage or "The same folder as Androidbox itself") +
+                              "\nWhere a new instance's files go unless you pick somewhere else while creating it. "
+                              "Good for keeping big games off a small system drive.",
+                              row(choose_storage, default_storage_default))))
 
         shortcuts = [("F11", "Full screen"), ("Ctrl+Shift+S", "Screenshot"), ("Ctrl+Shift+R", "Record the screen"),
                      ("Ctrl+Shift+K", "Game controls on or off"), ("Ctrl+Shift+E", "Edit game controls"),

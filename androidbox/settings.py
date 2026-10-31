@@ -12,6 +12,7 @@ LOCAL = {
     "boss_key": "",
     "always_on_top": False,
     "compact_tools": False,
+    "default_storage_path": "",
 }
 
 PROFILE = {

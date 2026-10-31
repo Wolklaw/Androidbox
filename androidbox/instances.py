@@ -7,6 +7,7 @@ import time
 import uuid
 import zipfile
 from dataclasses import asdict, dataclass, fields
+from pathlib import Path
 
 from . import installer, paths
 
@@ -67,6 +68,8 @@ class Instance:
     autostart: bool = False
     # A change to storage only takes effect on a fresh data partition, so the next start erases the old one
     wipe_next: bool = False
+    # Where this instance's files live. Empty means the default folder, inside Androidbox's own data
+    storage_path: str = ""
 
     @property
     def android(self):
@@ -86,7 +89,8 @@ class Instance:
 
     @property
     def folder(self):
-        return paths.AVD_HOME / f"{self.id}.avd"
+        base = Path(self.storage_path) if self.storage_path else paths.AVD_HOME
+        return base / f"{self.id}.avd"
 
     @property
     def log(self):
@@ -136,20 +140,34 @@ def number(values, key, default):
     return int(value) if value.isdigit() else default
 
 
+def marker_folder(marker):
+    # The marker's own "path=" line is the source of truth: a custom-storage instance's data
+    # doesn't sit next to its marker, the way the default folder always does
+    for line in marker.read_text().splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "path" and value.strip():
+            return Path(value.strip())
+    return paths.AVD_HOME / f"{marker.stem}.avd"
+
+
 def recover(instances):
     known = {instance.id for instance in instances}
     found = False
     for marker in sorted(paths.AVD_HOME.glob("*.ini")):
-        config = paths.AVD_HOME / f"{marker.stem}.avd" / "config.ini"
-        if marker.stem in known or not config.exists() or len(instances) >= len(CONSOLE_PORTS):
+        if marker.stem in known or len(instances) >= len(CONSOLE_PORTS):
+            continue
+        folder = marker_folder(marker)
+        config = folder / "config.ini"
+        if not config.exists():
             continue
         values = dict(line.split("=", 1) for line in config.read_text().splitlines() if "=" in line)
         name = values.get("avd.ini.displayname", "Android").strip() or "Android"
         if any(instance.name == name for instance in instances):
             name = f"{name} (recovered)"
         api = values.get("image.sysdir.1", "").split("android-")[-1].split("\\")[0]
+        storage_path = str(folder.parent) if folder.parent != paths.AVD_HOME else ""
         instances.append(Instance(
-            id=marker.stem, name=name, slot=free_slot(instances),
+            id=marker.stem, name=name, slot=free_slot(instances), storage_path=storage_path,
             cores=number(values, "hw.cpu.ncore", 4), ram=number(values, "hw.ramSize", 4096),
             width=number(values, "hw.lcd.width", 1080), height=number(values, "hw.lcd.height", 1920),
             density=number(values, "hw.lcd.density", 420), fps=number(values, "hw.lcd.vsync", 60),
@@ -246,7 +264,9 @@ def restore(file, slot, progress):
             saved = json.loads(archive.read("instance.json"))
         except KeyError:
             raise RuntimeError("This file isn't an Androidbox backup") from None
-        instance = from_dict(saved, id=new_id(), slot=slot)
+        # The backup's original storage location may not exist on this PC, so restore to the default
+        # folder; the instance can be moved to a custom one again afterwards
+        instance = from_dict(saved, id=new_id(), slot=slot, storage_path="")
         root = instance.folder.resolve()
         members = [member for member in archive.infolist()
                    if member.filename.startswith("avd/") and not member.is_dir()]

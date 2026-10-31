@@ -763,6 +763,7 @@ class MainWindow(QMainWindow, ScreenActions):
         storage = QComboBox()
         for size in instances.DISK_SIZES:
             storage.addItem(f"{size} GB" + ("  (big games need more)" if size == instances.DISK_SIZES[0] else ""), size)
+        location, location_row = self.storage_location_picker(self.prefs["default_storage_path"])
         modal.add(label("Name", "Section"))
         modal.add(name)
         saved = profiles.presets()
@@ -771,7 +772,7 @@ class MainWindow(QMainWindow, ScreenActions):
         for values in saved:
             start.addItem(values["name"], values)
         custom = [label("Display", "Section"), display, label("Android version", "Section"), android,
-                  label("Storage", "Section"), storage]
+                  label("Storage", "Section"), storage, label("Keep its files in", "Section"), location_row]
         if saved:
             modal.add(label("Start from", "Section"))
             modal.add(start)
@@ -785,13 +786,41 @@ class MainWindow(QMainWindow, ScreenActions):
             modal.add(widget)
         modal.cancel()
         modal.action("Create", lambda: self.create_instance(name.text(), display.currentData(), android.currentData(),
-                                                            start.currentData(), storage.currentData()))
+                                                            start.currentData(), storage.currentData(),
+                                                            location.text()))
         modal.open()
         name.setFocus()
         name.selectAll()
 
+    def choose_default_storage(self):
+        folder = QFileDialog.getExistingDirectory(self, "Default location for new instances",
+                                                  self.prefs["default_storage_path"] or str(Path.home()))
+        if folder:
+            self.set_pref("default_storage_path", folder)
+            self.show_page(self.page)
+
+    def clear_default_storage(self):
+        self.set_pref("default_storage_path", "")
+        self.show_page(self.page)
+
+    def storage_location_picker(self, initial=""):
+        default_path = self.prefs["default_storage_path"]
+        field = QLineEdit(initial)
+        field.setReadOnly(True)
+        field.setPlaceholderText("The default location" if default_path else "The same folder as Androidbox itself")
+
+        def browse():
+            folder = QFileDialog.getExistingDirectory(self, "Keep this instance's files in", field.text() or
+                                                       default_path or str(Path.home()))
+            if folder:
+                field.setText(folder)
+
+        choose = button("Choose…", browse, kind="secondary")
+        default = button("Default", lambda: field.setText(default_path), kind="secondary")
+        return field, row(field, choose, default)
+
     def create_instance(self, name, display="Phone", api=installer.DEFAULT_API, preset=None,
-                        disk=instances.DISK_SIZES[0]):
+                        disk=instances.DISK_SIZES[0], storage_path=""):
         if preset:
             hardware = {key: preset[key] for key in profiles.PRESET_FIELDS if key in preset}
             if hardware.get("api") not in installer.ANDROID_VERSIONS:
@@ -801,6 +830,8 @@ class MainWindow(QMainWindow, ScreenActions):
             cores, ram = system.suggested_hardware()
             hardware = {"width": width, "height": height, "density": density, "api": api, "disk": disk,
                         "cores": cores, "ram": ram}
+        if storage_path:
+            hardware["storage_path"] = storage_path
         instance = instances.create(self.instances, name.strip() or "Android", **hardware)
         self.add_controller(instance)
         self.select(instance.id)
