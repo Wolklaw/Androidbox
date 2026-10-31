@@ -334,8 +334,12 @@ class PhoneView(QWidget):
         if not self.image:
             return QRectF(self.rect())
         size = self.image.deviceIndependentSize()
-        return QRectF((self.width() - size.width()) / 2, (self.height() - size.height()) / 2,
-                      size.width(), size.height())
+        # Round to whole logical pixels: a fractional rect makes the antialiased edge of the
+        # rounded clip (and the smooth-scaled image draw) blend with the background, leaving a
+        # thin stray line around the frame, most visible with no margin around it in full screen
+        x = round((self.width() - size.width()) / 2)
+        y = round((self.height() - size.height()) / 2)
+        return QRectF(x, y, round(size.width()), round(size.height()))
 
     def frame_size(self):
         frame = self.frame_rect()
