@@ -25,12 +25,50 @@ foreach ($folder in "build\Androidbox", "dist\Androidbox") {
     }
 }
 
+# An exe with no version resource (company/product/description) is a classic signal that unsigned
+# antivirus ML heuristics (e.g. Defender's Bearfoos) use to flag PyInstaller apps as trojans
+$parts = @(($version -split '\.') + @("0", "0", "0", "0"))[0..3]
+$fileVers = $parts -join ", "
+New-Item -ItemType Directory -Force -Path "$PSScriptRoot\build" | Out-Null
+Set-Content -Path "$PSScriptRoot\build\version_info.txt" -Encoding utf8 -Value @"
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($fileVers),
+    prodvers=($fileVers),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'Wolklaw'),
+        StringStruct(u'FileDescription', u'Androidbox'),
+        StringStruct(u'FileVersion', u'$version.0'),
+        StringStruct(u'InternalName', u'Androidbox'),
+        StringStruct(u'LegalCopyright', u'Wolklaw'),
+        StringStruct(u'OriginalFilename', u'Androidbox.exe'),
+        StringStruct(u'ProductName', u'Androidbox'),
+        StringStruct(u'ProductVersion', u'$version.0')])
+      ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+"@
+
 .venv\Scripts\pyinstaller.exe "$PSScriptRoot\Androidbox.pyw" `
     --name Androidbox `
     --onedir `
     --windowed `
+    --noupx `
     --icon "$PSScriptRoot\assets\androidbox.ico" `
     --add-data "$PSScriptRoot\assets\androidbox.ico;assets" `
+    --version-file "$PSScriptRoot\build\version_info.txt" `
     --exclude-module tkinter `
     --collect-all sdl2dll `
     --distpath "$PSScriptRoot\dist" `
