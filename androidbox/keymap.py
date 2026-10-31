@@ -143,6 +143,7 @@ class Engine:
 
     def use(self, controls):
         self.controls = controls
+        self.ids = {id(control): FIRST_TOUCH + index for index, control in enumerate(controls)}
         self.pressed = {}
         self.analog = {}
         self.touching = {}
@@ -150,7 +151,10 @@ class Engine:
         self.cursor = (0.5, 0.5)
 
     def identifier(self, control):
-        return FIRST_TOUCH + self.controls.index(control)
+        # id()-based, not controls.index(control): two controls with the same field values
+        # (e.g. freshly added, not yet bound) compare equal, so index() would hand them the
+        # same touch identifier and they'd fight each other on screen
+        return self.ids[id(control)]
 
     def touch(self, identifier, u, v, down):
         if down:
