@@ -651,9 +651,30 @@ class MainWindow(QMainWindow, ScreenActions):
         self.run(lambda: installer.resolve(instance.api, tools=False), resolved,
                  lambda _: self.toast("Couldn't reach Google. Check your internet connection", "bad"))
 
-    def download_image(self, controller, packages):
+    def redownload_image(self, controller):
+        instance = controller.instance
+        same_image = [other for other in self.controllers.values() if other.instance.api == instance.api]
+        running = [other for other in same_image if other.state not in ("off", "crashed")]
+        if running:
+            names = ", ".join(other.instance.name for other in running)
+            self.toast(f"Stop {names} first: they share this Android image", "bad")
+            return
+
+        def resolved(result):
+            packages, _ = result
+            confirm(self.dialog_parent(), f"Redownload {instance.android}?",
+                   f"Gets the current version of {instance.android} straight from Google again, replacing the "
+                   "copy on this PC. Worth trying if Android reports it isn't Play Protect certified, or "
+                   "otherwise seems broken: Google occasionally fixes problems like that in a newer image.",
+                   "Redownload", lambda: self.download_image(controller, packages, force=True))
+
+        self.run(lambda: installer.resolve(instance.api, tools=False), resolved,
+                 lambda _: self.toast("Couldn't reach Google. Check your internet connection", "bad"))
+
+    def download_image(self, controller, packages, force=False):
         name = controller.instance.android
-        progress = Progress(self.dialog_parent(), f"Getting {name}", "Straight from Google. This happens once.")
+        subtitle = "Straight from Google again." if force else "Straight from Google. This happens once."
+        progress = Progress(self.dialog_parent(), f"Getting {name}", subtitle)
         last = [0.0]
 
         def report(package, done, total, stage):
@@ -669,7 +690,7 @@ class MainWindow(QMainWindow, ScreenActions):
             progress.close_modal()
             controller.start()
 
-        self.run(lambda: installer.install(packages, report), installed,
+        self.run(lambda: installer.install(packages, report, force), installed,
                  lambda error: progress.done("Download stopped", f"{error}. Start the instance again to resume."))
 
     def back_up(self, controller):

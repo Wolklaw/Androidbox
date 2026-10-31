@@ -89,10 +89,10 @@ def resolve(api=DEFAULT_API, tools=True):
     return packages, {p.license: texts.get(p.license, "") for p in packages}
 
 
-def install(packages, progress):
+def install(packages, progress, force=False):
     paths.DOWNLOADS.mkdir(parents=True, exist_ok=True)
     for package in packages:
-        if package.installed:
+        if package.installed and not force:
             continue
         archive = download(package, progress)
         extract(archive, paths.SDK / package.folder,

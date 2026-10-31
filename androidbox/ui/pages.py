@@ -524,6 +524,13 @@ class SettingsPage(Page):
                       setting("Back up this instance", "Saves its apps, data and settings to one file you can "
                                                        "restore from All instances.", backup)))
 
+        redownload = button("Redownload", lambda: host.redownload_image(controller), kind="secondary")
+        self.add(card(label("Troubleshooting", "Section"),
+                      setting(f"{instance.android} image", "Gets this instance's Android system image from Google "
+                                                            "again. Worth trying if Android reports it isn't Play "
+                                                            "Protect certified, or otherwise seems broken.",
+                              redownload)))
+
         reset = button("Factory reset", lambda: confirm(
             host.dialog_parent(), "Factory reset", f"Erase every app and all data on {instance.name}? "
             "This can't be undone.", "Erase everything", controller.factory_reset, danger=True), kind="danger")
