@@ -80,6 +80,8 @@ class Emulator:
             args.append("-wipe-data")
         if fresh:
             args.append("-no-snapshot-load")
+        if self.instance.proxy:
+            args += ["-http-proxy", self.instance.proxy]
         self.quick_boot = (self.instance.folder / "snapshots" / "default_boot").exists() and not (wipe or fresh)
         self.started = time.monotonic()
         paths.LOGS.mkdir(parents=True, exist_ok=True)

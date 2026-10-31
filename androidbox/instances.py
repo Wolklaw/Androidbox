@@ -70,6 +70,8 @@ class Instance:
     wipe_next: bool = False
     # Where this instance's files live. Empty means the default folder, inside Androidbox's own data
     storage_path: str = ""
+    # An HTTP proxy for all of this instance's network traffic, as host:port or http://user:pass@host:port
+    proxy: str = ""
 
     @property
     def android(self):

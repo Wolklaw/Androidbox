@@ -500,6 +500,10 @@ class SettingsPage(Page):
         ads = Toggle(instance.block_ads)
         ads.toggled.connect(controller.set_block_ads)
         browser = button("Set up", lambda: host.set_up_browser(controller), kind="secondary")
+        proxy = QLineEdit(instance.proxy)
+        proxy.setPlaceholderText("host:port")
+        proxy.setMaximumWidth(260)
+        proxy.editingFinished.connect(lambda: host.set_hardware(controller, proxy=proxy.text().strip()))
         self.add(card(label("Extras", "Section"),
                       setting("Eco mode", "Draws fewer frames and lowers Android's CPU priority. Good for "
                                           "idle games running in the background.", eco), divider(),
@@ -513,7 +517,12 @@ class SettingsPage(Page):
                                            "come from the same servers as the content, like YouTube's.", ads),
                       divider(),
                       setting("Ad-free browser", "Installs Firefox and uBlock Origin, which blocks ads on every "
-                                                 "website, YouTube included.", browser)))
+                                                 "website, YouTube included.", browser), divider(),
+                      setting("Network proxy", "Routes all of this instance's traffic through an HTTP proxy: "
+                                               "host:port, or http://user:pass@host:port if it needs a login. "
+                                               "Good for giving each instance its own IP. Blank means none. "
+                                               "Applies the next time Android starts.",
+                              proxy)))
 
         preset = button("Save…", lambda: host.save_preset(controller), kind="secondary")
         backup = button("Back up", lambda: host.back_up(controller), kind="secondary")
