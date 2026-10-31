@@ -124,7 +124,12 @@ mirror your input to all of them at the same time.
 
 The **Apps** page lists what's installed on an instance. Open a game, give it its own frame rate that
 applies while it's in front, uninstall it, or put a shortcut to it on your desktop. A shortcut starts the
-instance if it's off and opens that game, even when Androidbox is already running.
+instance if it's off and opens that game, even when Androidbox is already running, in full screen.
+
+Those shortcuts just pass command-line arguments, which is also how a frontend like LaunchBox can launch
+a game: point it at `Androidbox.exe` with `--instance <name or id> --launch <package> --fullscreen`.
+`--background` starts the instance without raising the Androidbox window (handy for autostart), and
+leaving out `--launch` just opens or switches to that instance.
 
 ### Updates
 

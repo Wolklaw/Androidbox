@@ -1141,7 +1141,7 @@ class MainWindow(QMainWindow, ScreenActions):
         instance = controller.instance
         name = app_name(package) if package else instance.name
         title = re.sub(r'[\\/:*?"<>|]', "", f"{name} on {instance.name}" if package else f"{name} (Androidbox)").strip()
-        arguments = ["--instance", instance.id] + (["--launch", package] if package else [])
+        arguments = ["--instance", instance.id] + (["--launch", package, "--fullscreen"] if package else [])
         desktop = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation))
         text = f"Opens {name} in Androidbox" if package else f"Starts {instance.name} in Androidbox"
         self.run(lambda: system.shortcut(desktop / f"{title}.lnk", arguments, text),
@@ -1169,6 +1169,8 @@ class MainWindow(QMainWindow, ScreenActions):
             controller.start()
         if not quiet:
             self.select(controller.instance.id)
+            if request.get("fullscreen") and not self.isFullScreen():
+                self.toggle_fullscreen()
 
     def setup_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
