@@ -164,9 +164,12 @@ you.
 ### Let Claude Code test your apps
 
 Off by default. Turn on **Let Claude Code control Android** in Settings and Androidbox writes a helper
-script to `%LOCALAPPDATA%\Androidbox\claude`. Claude Code on your PC can then take screenshots, read
-what's on screen, tap, swipe, type, install and launch apps, and read logs on your running instances.
-Turn the switch off and the helper is deleted, and it refuses to run while the switch is off.
+to `%LOCALAPPDATA%\Androidbox\claude`, with a `README.md` there showing the exact command to register
+it as an MCP server (`claude mcp add ...`). Claude Code then gets tools for your running instances:
+screenshots returned inline, reading what's on screen, tapping, swiping, typing, installing and
+launching apps, and reading logs. The same folder also has a plain command-line version of the same
+features, for scripting or when you'd rather not register an MCP server. Turn the switch off and the
+helper is deleted, and it refuses to run either way while the switch is off.
 
 ### Everything else
 
@@ -371,7 +374,7 @@ python -m venv .venv
 - `androidbox/macros.py`, `browser.py`: macros, with their editing, and the ad-free browser
 - `androidbox/system.py`, `relocate.py`, `hotkeys.py`: what the PC has, shortcuts and Windows startup,
   moving the files to another drive, and shortcuts that work in any program
-- `androidbox/claude.py`: the Claude Code helper script
+- `androidbox/claude.py`: the Claude Code helper, as an MCP server and a command line
 - `androidbox/updates.py`: asks GitHub for the newest release, then downloads and verifies its installer
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
   Android, and `files.py` browses Android's storage

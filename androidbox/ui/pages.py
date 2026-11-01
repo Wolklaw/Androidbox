@@ -630,8 +630,9 @@ class InstancesPage(Page):
                       setting("Look for an update now", "Checks GitHub right away.", check_now), divider(),
                       setting("Let Claude Code control Android", "Lets Claude Code on this PC tap, type, take "
                                                                   "screenshots and install apps on your running "
-                                                                  "instances to test them, through a helper "
-                                                                  "script in your Androidbox folder.", access)))
+                                                                  "instances to test them, as an MCP server or "
+                                                                  "through a helper script in your Androidbox "
+                                                                  "folder.", access)))
 
         tray = Toggle(host.prefs["close_to_tray"])
         tray.toggled.connect(lambda on: host.set_pref("close_to_tray", on))
