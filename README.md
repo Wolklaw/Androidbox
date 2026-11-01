@@ -22,12 +22,24 @@
   Windows 10 or 11 · free · MIT license
 </p>
 
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#tips">Tips</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="#building">Build it yourself</a>
+</p>
+
 ---
 
 Androidbox runs **Google's official Android Emulator**, the same engine inside Android Studio, on your
 graphics card, and shows Android in one clean window. There are no ads, no accounts to create, no
 bundled apps and no telemetry. Everything it needs downloads straight from Google, and everything it
 stores stays in one folder you can delete.
+
+> **Not another BlueStacks.** Nothing to install beyond what Google ships, nothing bundled, and because
+> it can't be rooted, banking apps and games with root detection just work.
 
 <p align="center"><img src="docs/screen.png" alt="Androidbox running Android 15" width="820"></p>
 
