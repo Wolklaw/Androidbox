@@ -16,7 +16,7 @@ VersionInfoVersion={#AppVersion}.0
 VersionInfoCompany=Wolklaw
 VersionInfoDescription=Androidbox Setup
 ; Program Files for everyone by default. The first page offers "just for me" to people without admin rights
-DefaultDirName={autopf}\Androidbox
+DefaultDirName={code:DefaultDir}
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
@@ -72,6 +72,15 @@ const
 
 var
   Restart: Boolean;
+
+// {autopf} gave "Program Files (x86)" to people who picked "just for me", which they can't write to
+function DefaultDir(Param: String): String;
+begin
+  if IsAdminInstallMode then
+    Result := ExpandConstant('{commonpf64}\Androidbox')
+  else
+    Result := ExpandConstant('{userpf}\Androidbox');
+end;
 
 function RestartNeeded: Boolean;
 begin
