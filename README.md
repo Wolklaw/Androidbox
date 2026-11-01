@@ -38,8 +38,8 @@ graphics card, and shows Android in one clean window. There are no ads, no accou
 bundled apps and no telemetry. Everything it needs downloads straight from Google, and everything it
 stores stays in one folder you can delete.
 
-> **Not another BlueStacks.** Nothing to install beyond what Google ships, nothing bundled, and because
-> it can't be rooted, banking apps and games with root detection just work.
+> Nothing to install beyond what Google ships, nothing bundled, and because it can't be rooted, banking
+> apps and games with root detection just work.
 
 <p align="center"><img src="docs/screen.png" alt="Androidbox running Android 15" width="820"></p>
 
@@ -337,9 +337,9 @@ Yes. Skip signing in and install apps from `.apk` files.
 <summary><b>Does Pokémon GO work?</b></summary>
 
 No, and it won't. Niantic blocks emulators on purpose: the game checks Play Integrity and its own
-anti-cheat, and refuses to run on any emulator, BlueStacks included. Getting around that means breaking
-their terms of service and risking a ban, so Androidbox doesn't try. The GPS location tool is meant for
-testing apps and games that allow it.
+anti-cheat, and refuses to run on any of them. Getting around that means breaking their terms of service
+and risking a ban, so Androidbox doesn't try. The GPS location tool is meant for testing apps and games
+that allow it.
 
 </details>
 
