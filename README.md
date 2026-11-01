@@ -8,6 +8,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><img alt="Latest release"
+     src="https://img.shields.io/github/v/release/Wolklaw/Androidbox?label=release"></a>
+  <a href="https://github.com/Wolklaw/Androidbox/releases"><img alt="Downloads"
+     src="https://img.shields.io/github/downloads/Wolklaw/Androidbox/total"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Wolklaw/Androidbox"></a>
+  <a href="https://github.com/Wolklaw/Androidbox/stargazers"><img alt="Stars"
+     src="https://img.shields.io/github/stars/Wolklaw/Androidbox"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Wolklaw/Androidbox/releases/latest"><b>Download the Androidbox installer</b></a><br>
   Windows 10 or 11 · free · MIT license
 </p>
@@ -395,6 +405,9 @@ python -m venv .venv
   by AdGuard. Androidbox only helps you install or use them.
 - Built with **Qt for Python (PySide6)** and **gRPC**. Controller support comes from **SDL**, through
   PySDL2.
+- Indexed as a worked example for AI coding agents by the
+  [XERJ Corpus Hub](https://hub.xerj.org/contributors/Wolklaw):
+  [![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Wolklaw/badge.svg)](https://hub.xerj.org/contributors/Wolklaw)
 
 ## License
 
