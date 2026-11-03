@@ -1,5 +1,6 @@
 import ctypes
 import json
+import os
 import sys
 
 from PySide6.QtGui import QIcon
@@ -106,4 +107,6 @@ def main():
         window.show()
     code = app.exec()
     server.close()
-    sys.exit(code)
+    # Leftover worker threads or gRPC channels must never keep a closed window alive as a hidden process
+    sys.stdout and sys.stdout.flush()
+    os._exit(code)

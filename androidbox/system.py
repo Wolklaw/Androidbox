@@ -141,12 +141,14 @@ def shortcut(file, arguments, description):
         raise OSError(result.stderr.strip() or "Windows couldn't create the shortcut")
 
 
-def after_exit(script, settings):
+def after_exit(script, settings, patience=120):
     """Runs PowerShell commands once this process has ended, so they never meet its single-instance lock.
 
+    If this process is still around after `patience` seconds (a hung shutdown), it's ended so the commands still run.
     DETACHED_PROCESS would stop PowerShell from starting at all, and the helper doesn't need it to outlive us."""
     subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
-                      "Wait-Process -Id $env:ANDROIDBOX_WAIT_FOR -ErrorAction SilentlyContinue; " + script],
+                      f"Wait-Process -Id $env:ANDROIDBOX_WAIT_FOR -Timeout {patience} -ErrorAction SilentlyContinue; "
+                      "Stop-Process -Id $env:ANDROIDBOX_WAIT_FOR -Force -ErrorAction SilentlyContinue; " + script],
                      env={**os.environ, "ANDROIDBOX_WAIT_FOR": str(os.getpid()), **settings}, close_fds=True,
                      creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
 
@@ -175,4 +177,4 @@ def install_update(installer, relaunch=None):
     install = ("Start-Process -FilePath $env:UPDATE_INSTALLER -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART' "
                "-Wait -ErrorAction SilentlyContinue; ")
     after_exit(install + START_AGAIN, {"UPDATE_INSTALLER": str(installer), "RELAUNCH_TARGET": target,
-                                       "RELAUNCH_ARGUMENTS": prefix})
+                                       "RELAUNCH_ARGUMENTS": prefix}, patience=45)

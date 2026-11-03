@@ -1,7 +1,9 @@
 import ctypes
 import random
 import re
+import os
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -549,8 +551,8 @@ class MainWindow(QMainWindow, ScreenActions):
                 return self.offer_update(manual)
             if not (release.installable and system.can_update()):
                 self.offer_download_page(release)
-            elif self.prefs["auto_update"] and not manual:
-                self.fetch_update(release, quiet=True)
+            elif self.prefs["auto_update"]:
+                self.fetch_update(release, quiet=not manual)
             else:
                 self.offer_update_download(release)
 
@@ -624,8 +626,18 @@ class MainWindow(QMainWindow, ScreenActions):
 
     def install_update(self):
         release, file = self.pending_update
+        # Only a cheap check here: it was verified against GitHub's checksum when it finished downloading
+        if not (file.is_file() and file.stat().st_size == release.size):
+            # The cached installer vanished or was damaged: fetch it again rather than run something unchecked
+            self.pending_update = None
+            self.offered_update = None
+            return self.fetch_update(release, quiet=False)
+        # Show something at once; saving the Androids can take several seconds and the window used to just vanish
+        progress = Progress(self.dialog_parent(), f"Updating to Androidbox {release.version}",
+                            "Saving your Androids, then installing. Androidbox opens again by itself.")
+        progress.update_progress("Saving your Androids…", 1.0)
         system.install_update(file)
-        self.quit_app()
+        self.quit_app(patience=25, progress=progress)
 
     def export_controls(self, package):
         file, _ = QFileDialog.getSaveFileName(self, "Export game controls", str(documents() / f"{package}.json"),
@@ -1610,10 +1622,14 @@ class MainWindow(QMainWindow, ScreenActions):
             return
         self.quit_app()
 
-    def quit_app(self):
+    def quit_app(self, patience=90, progress=None):
         if self.closing:
             return
         self.closing = True
+        # A watchdog thread, not a Qt timer: it still fires if the UI thread or the event loop is stuck
+        watchdog = threading.Timer(patience + 5, os._exit, (0,))
+        watchdog.daemon = True
+        watchdog.start()
         self.hotkeys.set({})
         if self.tray:
             self.tray.hide()
@@ -1623,7 +1639,8 @@ class MainWindow(QMainWindow, ScreenActions):
         if not running:
             QApplication.quit()
             return
-        self.hide()
+        if not progress:
+            self.hide()
         remaining = [len(running)]
 
         def stopped():
@@ -1633,4 +1650,4 @@ class MainWindow(QMainWindow, ScreenActions):
 
         for controller in running:
             controller.stop(then=stopped)
-        QTimer.singleShot(90_000, QApplication.quit)
+        QTimer.singleShot(patience * 1000, QApplication.quit)
