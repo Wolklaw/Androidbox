@@ -85,7 +85,7 @@ class Progress(Modal):
 
 
 class Page(QScrollArea):
-    def __init__(self, width=720):
+    def __init__(self, width=860):
         super().__init__()
         self.setWidgetResizable(True)
         holder = QWidget()
@@ -98,7 +98,9 @@ class Page(QScrollArea):
         self.body.setContentsMargins(0, 0, 0, 0)
         self.body.setSpacing(16)
         self.body.setAlignment(Qt.AlignmentFlag.AlignTop)
-        outer.addWidget(self.content)
+        # In the middle, so a wide window has room on both sides, not an empty half on the right
+        outer.addStretch(1)
+        outer.addWidget(self.content, 100)
         outer.addStretch(1)
         self.setWidget(holder)
 
@@ -204,6 +206,11 @@ class StateView(QWidget):
             layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addSpacing(8)
         layout.addLayout(self.actions)
+        self.tip = label("", "Small", wrap=True)
+        self.tip.setFixedWidth(420)
+        self.tip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addSpacing(14)
+        layout.addWidget(self.tip, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def show_state(self, controller, popped=False):
         while self.actions.count():
@@ -223,6 +230,9 @@ class StateView(QWidget):
             title, text = "Android is off", "Start it to use your apps and games. Drop APK files here to install them."
         self.title.setText(title)
         self.text.setText(text)
+        # A different tip each day, only where there is room for one
+        self.tip.setText(f"Tip: {TIPS[time.localtime().tm_yday % len(TIPS)]}" if state in ("off", "crashed")
+                         and not popped else "")
         busy = state in ("booting", "stopping", "on") and not popped
         self.bar.setVisible(busy)
         if busy:
@@ -238,6 +248,10 @@ class StateView(QWidget):
             self.actions.addWidget(button("Open log", controller.open_log, kind="secondary", size="large"))
 
 
+# Below this the phone needs the room more than the panel does
+INSPECTOR_MIN_WIDTH = 980
+
+
 class ScreenPage(QWidget):
     def __init__(self, host):
         super().__init__()
@@ -247,7 +261,8 @@ class ScreenPage(QWidget):
         self.phone = PhoneView(host)
         self.stack.addWidget(self.state)
         self.stack.addWidget(self.phone)
-        self.tools = ToolRail(host)
+        # Beside the screen in a pop-out window, which is narrow, and floating under it everywhere else
+        self.tools = ToolRail(host, horizontal=not host.popped)
         self.inspector = Inspector(host)
         self.inspector.hide()
         self.edge_to_edge = False
@@ -258,19 +273,31 @@ class ScreenPage(QWidget):
         self.holder.setObjectName("Page")
         self.holder_layout = QVBoxLayout(self.holder)
         self.holder_layout.setContentsMargins(16, 16, 16, 16)
-        self.holder_layout.addWidget(self.stack)
+        self.holder_layout.addWidget(self.stack, 1)
+        if self.tools.horizontal:
+            dock = QHBoxLayout()
+            dock.setContentsMargins(0, 12, 0, 0)
+            dock.addStretch(1)
+            dock.addWidget(self.tools)
+            dock.addStretch(1)
+            self.holder_layout.addLayout(dock)
         layout.addWidget(self.holder, 1)
         layout.addWidget(self.inspector)
-        layout.addWidget(self.tools)
+        if not self.tools.horizontal:
+            layout.addWidget(self.tools)
         self.phone.editing_changed.connect(lambda _: host.refresh_tools())
 
     def refresh_inspector(self, controller):
         # Beside the running screen, when asked for, and out of the way in full screen
         show = bool(controller and controller.on and self.host.prefs["inspector"] and not self.edge_to_edge
-                    and self.stack.currentWidget() is self.phone)
+                    and self.stack.currentWidget() is self.phone and self.width() >= INSPECTOR_MIN_WIDTH)
         self.inspector.setVisible(show)
         if show:
             self.inspector.refresh(controller)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.refresh_inspector(self.host.active())
 
     def set_edge_to_edge(self, flag):
         self.edge_to_edge = flag
@@ -448,13 +475,24 @@ class MacrosPage(Page):
         controller.macros_changed.emit()
 
 
+TIPS = [
+    "Press Ctrl+K to search every page, setting, action and saved state.",
+    "Save the state of an instance before a risky level, and come back to it in a few seconds.",
+    "Keep a game running: Androidbox opens it again if it closes or crashes.",
+    "Drop an APK, XAPK or APKS file on this window to install it.",
+    "Open an instance in its own window, or tile several side by side from All instances.",
+    "Record a macro with Ctrl+Shift+M and give it a hotkey that works in any program.",
+    "Slow an instance's network to 3G or EDGE to see how an app copes with a bad signal.",
+    "Each game keeps its own controls, and its own frame rate if you give it one.",
+]
+
 # Shorter names for the jump chips, so the whole row fits
 CHIP_NAMES = {"Saved states": "States", "Troubleshooting": "Fixes", "Danger zone": "Danger"}
 
 
 class SettingsPage(Page):
     def __init__(self, host):
-        super().__init__(width=820)
+        super().__init__()
         self.host = host
         self.sections = []
 
@@ -758,7 +796,7 @@ class InstancesPage(Page):
                       setting("Show FPS and system use", "Show frames per second in the corner of the screen, with how "
                                                          "much processor and memory the emulator is using.", fps),
                       divider(),
-                      setting("Compact toolbar", "Make the row of tool buttons on the right of the screen narrower.",
+                      setting("Compact toolbar", "Make the row of tool buttons under the screen smaller.",
                               compact), divider(),
                       setting("Check for updates", f"You're on Androidbox {VERSION}. Androidbox asks GitHub when it "
                                                    "starts, and every few hours while it runs, whether a newer "
@@ -819,7 +857,7 @@ class InstancesPage(Page):
 
 class ProfilePage(Page):
     def __init__(self, host):
-        super().__init__(width=820)
+        super().__init__()
         self.host = host
 
     def refresh(self):
@@ -968,7 +1006,7 @@ def app_name(package):
 
 class LibraryPage(Page):
     def __init__(self, host):
-        super().__init__(width=820)
+        super().__init__()
         self.host = host
 
     def refresh(self, controller):

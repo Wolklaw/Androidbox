@@ -32,7 +32,6 @@ class Inspector(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setFixedWidth(WIDTH)
         self.signature = None
-        self.stats = None
         self.holder = QWidget()
         self.layout_ = QVBoxLayout(self.holder)
         self.layout_.setContentsMargins(12, 12, 12, 16)
@@ -57,8 +56,6 @@ class Inspector(QWidget):
         if signature != self.signature:
             self.signature = signature
             self.build(controller, states, shown)
-        usage = controller.usage
-        self.stats.setText(f"{usage[0]:.0f}% CPU  ·  {usage[1]:.1f} GB" if usage else "")
 
     def build(self, controller, states, macro_names):
         host = self.host
@@ -67,8 +64,7 @@ class Inspector(QWidget):
             item = self.layout_.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self.stats = label("", "Small")
-        self.layout_.addWidget(column(label(instance.name, "Subheading"), self.stats, spacing=2))
+        self.layout_.addWidget(label(instance.name, "Subheading"))
 
         chosen = combo([(name, name) for name in states] or [("None saved yet", "")], states[0] if states else "")
         chosen.setEnabled(bool(states))

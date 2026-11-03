@@ -1,5 +1,5 @@
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QFrame, QMenu, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .theme import COLORS, ICONS
 from .widgets import ToolButton
@@ -21,9 +21,10 @@ MORE = [
 
 
 class ToolRail(QWidget):
-    def __init__(self, host):
+    def __init__(self, host, horizontal=False):
         super().__init__()
-        self.setObjectName("Tools")
+        self.horizontal = horizontal
+        self.setObjectName("Dock" if horizontal else "Tools")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.compact = False
         self.buttons = {}
@@ -45,37 +46,46 @@ class ToolRail(QWidget):
              ("more", "More tools", self.show_more)],
         ]
         column = QWidget()
-        layout = QVBoxLayout(column)
+        layout = QHBoxLayout(column) if horizontal else QVBoxLayout(column)
         layout.setContentsMargins(8, 10, 8, 10)
-        layout.setSpacing(4)
+        layout.setSpacing(2 if horizontal else 4)
+        middle = Qt.AlignmentFlag.AlignVCenter if horizontal else Qt.AlignmentFlag.AlignHCenter
         for number, group in enumerate(groups):
             if number:
                 line = QFrame()
-                line.setFixedSize(24, 1)
+                line.setFixedSize(*((1, 22) if horizontal else (24, 1)))
                 line.setStyleSheet(f"background: {COLORS['line']};")
-                layout.addWidget(line, alignment=Qt.AlignmentFlag.AlignHCenter)
+                layout.addWidget(line, alignment=middle)
             for name, tooltip, action, *checkable in group:
                 tool = ToolButton(ICONS[name], tooltip, action, checkable=bool(checkable))
                 self.buttons[name] = tool
-                layout.addWidget(tool, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(1)
-        scroll = QScrollArea()
-        scroll.setWidget(column)
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                layout.addWidget(tool, alignment=middle)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        if horizontal:
+            outer.addWidget(column)
+            self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        else:
+            layout.addStretch(1)
+            scroll = QScrollArea()
+            scroll.setWidget(column)
+            scroll.setWidgetResizable(True)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            outer.addWidget(scroll)
         self.host = host
         self.layout_margins = layout
         self.apply_compact(False)
 
     def apply_compact(self, compact):
         self.compact = compact
-        self.setFixedWidth(40 if compact else 56)
         margin = 4 if compact else 8
-        self.layout_margins.setContentsMargins(margin, 10, margin, 10)
+        if self.horizontal:
+            self.setFixedHeight(44 if compact else 54)
+            self.layout_margins.setContentsMargins(10, margin - 2, 10, margin - 2)
+        else:
+            self.setFixedWidth(40 if compact else 56)
+            self.layout_margins.setContentsMargins(margin, 10, margin, 10)
         for tool in self.buttons.values():
             tool.set_compact(compact)
 

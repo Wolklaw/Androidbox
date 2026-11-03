@@ -12,7 +12,7 @@ LOCAL = {
     "boss_key": "",
     "always_on_top": False,
     "compact_tools": False,
-    "inspector": False,
+    "inspector": True,
     "default_storage_path": "",
 }
 

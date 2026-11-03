@@ -1,10 +1,11 @@
 import ctypes
+import random
 import re
 import shutil
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
                                QMenu, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
@@ -17,11 +18,12 @@ from .controller import Controller, plural
 from .host import ScreenActions
 from .pages import (ControlsPage, InstancesPage, LibraryPage, MacrosPage, NoAccelerationPage, ProfilePage, Progress,
                     ScreenPage, SettingsPage, SetupPage, app_name, show_text)
+from . import fun
 from .palette import Palette
 from .popout import PopoutWindow
 from .theme import COLORS, ICONS
-from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, ProfileButton, Toast, ToolButton, button, column,
-                      confirm, divider, glyph_css, label, row, style_title_bar)
+from .widgets import (STATE_WORDS, STATUS_COLORS, InstanceButton, Modal, NavButton, ProfileButton, TabButton, Toast,
+                      ToolButton, button, column, confirm, divider, glyph_css, label, row, style_title_bar)
 
 PAGES = {
     "screen": ("screen", "Screen"),
@@ -34,6 +36,7 @@ PAGES = {
 }
 
 GLOBAL_PAGES = ("instances", "profile")
+HEADER_STATS_MIN_WIDTH = 1180
 
 UPDATE_CHECK_HOURS = 6
 STATES = {"on": "Running", "booting": "Starting…", "stopping": "Shutting down…", "crashed": "Stopped unexpectedly"}
@@ -71,10 +74,13 @@ class MainWindow(QMainWindow, ScreenActions):
         self.boss_hidden = False
         self.hidden_popouts = []
         self.told_about_tray = False
+        self.logo_taps = []
+        self.konami = 0
         self.pending_update = None
         self.offered_update = None
         self.update_timer = QTimer(self, interval=UPDATE_CHECK_HOURS * 3600 * 1000, timeout=self.check_for_updates)
         self.hotkeys = Hotkeys(QApplication.instance())
+        QApplication.instance().installEventFilter(self)
         tasks.relay.on_error = self.report
 
         central = QWidget()
@@ -129,6 +135,11 @@ class MainWindow(QMainWindow, ScreenActions):
             self.show_onboarding(self.setup)
             self.setup.begin()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "header_stats"):
+            self.update_stats()
+
     def showEvent(self, event):
         style_title_bar(self)
 
@@ -136,23 +147,24 @@ class MainWindow(QMainWindow, ScreenActions):
         self.sidebar = QWidget()
         self.sidebar.setObjectName("Sidebar")
         self.sidebar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.sidebar.setFixedWidth(248)
+        self.sidebar.setFixedWidth(264)
         layout = QVBoxLayout(self.sidebar)
-        layout.setContentsMargins(10, 0, 10, 12)
-        layout.setSpacing(2)
+        layout.setContentsMargins(14, 0, 14, 14)
+        layout.setSpacing(6)
 
         logo = label()
-        logo.setPixmap(QIcon(str(paths.ICON)).pixmap(22, 22))
-        brand = row(logo, label("Androidbox", "Brand"), None, spacing=10, margins=(8, 0, 0, 0))
-        brand.setFixedHeight(56)
+        logo.setPixmap(QIcon(str(paths.ICON)).pixmap(26, 26))
+        brand = row(logo, label("Androidbox", "Brand"), None, spacing=10, margins=(4, 0, 0, 0))
+        brand.setFixedHeight(68)
+        brand.mousePressEvent = lambda event: self.logo_clicked()
         layout.addWidget(brand)
 
         add = ToolButton(ICONS["add"], "Create an instance", self.new_instance)
-        add.setFixedSize(26, 26)
-        layout.addWidget(row(label("Instances", "Section"), None, add, margins=(8, 4, 2, 2)))
+        add.setFixedSize(28, 28)
+        layout.addWidget(row(label("Instances", "Section"), None, add, margins=(4, 4, 0, 2)))
         self.instance_list = QVBoxLayout()
         self.instance_list.setContentsMargins(0, 0, 0, 0)
-        self.instance_list.setSpacing(2)
+        self.instance_list.setSpacing(6)
         list_holder = QWidget()
         list_holder.setLayout(self.instance_list)
         self.instance_scroll = QScrollArea()
@@ -163,28 +175,11 @@ class MainWindow(QMainWindow, ScreenActions):
         self.overview = NavButton(ICONS["apps"], "All instances")
         self.overview.clicked.connect(lambda: self.select(None))
         layout.addWidget(self.overview)
-
-        self.page_section = QWidget()
-        pages_layout = QVBoxLayout(self.page_section)
-        pages_layout.setContentsMargins(0, 10, 0, 0)
-        pages_layout.setSpacing(2)
-        pages_layout.addWidget(divider())
-        pages_layout.addSpacing(8)
-        self.page_title = label("", "Section")
-        self.page_title.setContentsMargins(8, 0, 0, 4)
-        pages_layout.addWidget(self.page_title)
-        self.nav_buttons = {}
-        for name in ("screen", "controls", "macros", "library", "settings"):
-            glyph, text = PAGES[name]
-            nav = NavButton(ICONS[glyph], text)
-            nav.clicked.connect(lambda _=False, page=name: self.show_page(page))
-            self.nav_buttons[name] = nav
-            pages_layout.addWidget(nav)
-        layout.addWidget(self.page_section)
         layout.addStretch(1)
 
+        layout.addWidget(button("Search everything  ·  Ctrl+K", self.open_palette, kind="secondary"))
         self.status = label("", "Small")
-        self.status.setContentsMargins(8, 0, 0, 6)
+        self.status.setContentsMargins(4, 6, 0, 4)
         self.power = button("Start Android", self.toggle_power)
         self.power_area = column(self.status, self.power, spacing=0)
         layout.addWidget(self.power_area)
@@ -193,18 +188,30 @@ class MainWindow(QMainWindow, ScreenActions):
     def build_header(self):
         self.header = QFrame()
         self.header.setObjectName("Header")
-        self.header.setFixedHeight(52)
+        self.header.setFixedHeight(68)
         layout = QHBoxLayout(self.header)
-        layout.setContentsMargins(20, 0, 20, 0)
-        layout.setSpacing(10)
-        self.header_icon = label("")
-        self.header_icon.setStyleSheet(f"color: {COLORS['faint']}; {glyph_css(17)}")
-        self.header_title = label("", "Title")
+        layout.setContentsMargins(28, 0, 24, 0)
+        layout.setSpacing(24)
+        self.header_title = label("", "HeaderTitle")
         self.header_detail = label("", "Small")
-        layout.addWidget(self.header_icon)
-        layout.addWidget(self.header_title)
-        layout.addWidget(self.header_detail)
+        layout.addWidget(column(self.header_title, self.header_detail, spacing=0))
+        # The pages of an instance are tabs up here, so the sidebar is only about which instance
+        self.tabs = QWidget()
+        tabs_layout = QHBoxLayout(self.tabs)
+        tabs_layout.setContentsMargins(0, 0, 0, 0)
+        tabs_layout.setSpacing(6)
+        self.nav_buttons = {}
+        for name in ("screen", "controls", "macros", "library", "settings"):
+            tab = TabButton(PAGES[name][1])
+            tab.clicked.connect(lambda _=False, page=name: self.show_page(page))
+            self.nav_buttons[name] = tab
+            tabs_layout.addWidget(tab)
+        self.page_section = self.tabs
+        layout.addWidget(self.tabs)
         layout.addStretch(1)
+        self.header_stats = label("", "Chip")
+        self.header_stats.hide()
+        layout.addWidget(self.header_stats, 0, Qt.AlignmentFlag.AlignVCenter)
         self.profile_chip = ProfileButton()
         self.profile_chip.setToolTip("Your profile: game controls, macros, presets and preferences")
         self.profile_chip.clicked.connect(self.open_profile_menu)
@@ -288,6 +295,7 @@ class MainWindow(QMainWindow, ScreenActions):
         controller.notify.connect(self.toast)
         item = InstanceButton(instance)
         item.clicked.connect(lambda: self.select(instance.id))
+        item.power_clicked.connect(lambda: self.toggle_controller(controller))
         self.instance_buttons[instance.id] = item
         self.instance_list.addWidget(item)
         self.fit_instance_list()
@@ -301,8 +309,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.fit_instance_list()
 
     def fit_instance_list(self):
-        rows = min(len(self.instance_buttons), 6)
-        self.instance_scroll.setFixedHeight(rows * 44 + max(rows - 1, 0) * 2)
+        rows = min(len(self.instance_buttons), 5)
+        self.instance_scroll.setFixedHeight(rows * 72 + max(rows - 1, 0) * 6)
 
     def select(self, instance_id):
         if instance_id not in self.controllers:
@@ -318,8 +326,6 @@ class MainWindow(QMainWindow, ScreenActions):
             item.setChecked(key == instance_id)
         self.page_section.setVisible(instance_id is not None)
         self.power_area.setVisible(instance_id is not None)
-        if instance_id:
-            self.page_title.setText(self.active().instance.name)
         self.update_power()
         self.show_page("screen" if instance_id else "instances")
         self.update_mirrors()
@@ -358,6 +364,8 @@ class MainWindow(QMainWindow, ScreenActions):
         for key, nav in self.nav_buttons.items():
             nav.setChecked(key == name)
         self.overview.setChecked(self.current is None and name == "instances")
+        # An instance's tabs belong to the instance's own pages, not to All instances or Profile
+        self.page_section.setVisible(controller is not None and name not in GLOBAL_PAGES)
         self.update_power()
         self.update_header()
 
@@ -366,17 +374,29 @@ class MainWindow(QMainWindow, ScreenActions):
             self.show_page("screen")
 
     def update_header(self):
-        glyph, title = PAGES[self.page]
         controller = self.active()
-        detail = ""
-        if self.page == "screen" and controller and controller.on:
-            detail = controller.package or ""
-        elif self.page == "instances":
+        if self.page in GLOBAL_PAGES or not controller:
+            title = PAGES[self.page][1]
             running = sum(1 for c in self.controllers.values() if c.state == "on")
-            detail = f"{running} of {len(self.controllers)} running"
-        self.header_icon.setText(ICONS[glyph])
+            detail = f"{running} of {len(self.controllers)} running" if self.page == "instances" else ""
+        else:
+            title = controller.instance.name
+            detail = controller.package if self.page == "screen" and controller.on and controller.package else \
+                f"{controller.instance.android}  ·  {STATE_WORDS.get(controller.state, 'Off')}"
         self.header_title.setText(title)
-        self.header_detail.setText(detail)
+        # A long package name must not push the tabs around
+        self.header_detail.setText(self.header_detail.fontMetrics().elidedText(detail, Qt.TextElideMode.ElideMiddle,
+                                                                               240))
+        self.header_detail.setToolTip(detail)
+        self.update_stats()
+
+    def update_stats(self):
+        controller = self.active()
+        usage = controller.usage if controller and controller.on else None
+        # The sidebar card already says it, so the header only does when there is room
+        self.header_stats.setVisible(bool(usage) and self.width() >= HEADER_STATS_MIN_WIDTH)
+        if usage:
+            self.header_stats.setText(f"{usage[0]:.0f}% CPU  ·  {usage[1]:.1f} GB")
 
     def controller_changed(self, controller):
         item = self.instance_buttons.get(controller.instance.id)
@@ -393,6 +413,7 @@ class MainWindow(QMainWindow, ScreenActions):
             self.update_header()
             if self.page in ("screen", "settings", "macros", "controls", "library"):
                 self.show_page(self.page)
+        self.update_live()
         self.update_mirrors()
 
     def app_changed(self, controller):
@@ -445,10 +466,13 @@ class MainWindow(QMainWindow, ScreenActions):
     def toggle_power(self):
         controller = self.active()
         if controller:
-            if controller.state in ("off", "crashed"):
-                controller.start()
-            else:
-                controller.stop()
+            self.toggle_controller(controller)
+
+    def toggle_controller(self, controller):
+        if controller.state in ("off", "crashed"):
+            controller.start()
+        elif controller.state == "on":
+            controller.stop()
 
     def pop_out(self, controller):
         key = controller.instance.id
@@ -900,14 +924,50 @@ class MainWindow(QMainWindow, ScreenActions):
         controller.instance.name = text
         controller.save()
         self.instance_buttons[controller.instance.id].update()
-        self.page_title.setText(text)
+        self.update_header()
         popout = self.popouts.get(controller.instance.id)
         if popout:
             popout.refresh()
 
     def update_live(self):
+        # Pictures and meters in the sidebar cards, the header and the instance grid, without rebuilding any
+        for key, item in self.instance_buttons.items():
+            controller = self.controllers.get(key)
+            if controller:
+                usage = controller.usage
+                item.set_live(controller.thumb, f"{usage[0]:.0f}%  ·  {usage[1]:.1f} GB" if usage else "")
+        self.update_stats()
         if self.page == "instances":
             self.pages["instances"].update_live()
+
+    def logo_clicked(self):
+        now = time.monotonic()
+        self.logo_taps = [tap for tap in self.logo_taps if now - tap < 4] + [now]
+        if len(self.logo_taps) >= fun.LOGO_CLICKS:
+            self.logo_taps = []
+            self.toast(random.choice(fun.LOGO_QUIPS))
+
+    def eventFilter(self, watched, event):
+        # Up, up, down, down, left, right, left, right, B, A, on the instances page, where no game is listening
+        if event.type() == QEvent.Type.KeyPress and self.page == "instances" and self.isActiveWindow():
+            key = event.key()
+            self.konami = self.konami + 1 if key == fun.KONAMI[self.konami] else int(key == fun.KONAMI[0])
+            if self.konami == len(fun.KONAMI):
+                self.konami = 0
+                self.easter_egg("konami")
+        return False
+
+    def easter_egg(self, phrase):
+        self.toast(fun.SECRETS.get(phrase, ""))
+        if phrase in fun.CONFETTI:
+            fun.rain(self)
+        if phrase == "do a barrel roll":
+            live = self.live()
+            if live:
+                live.rotate()
+                QTimer.singleShot(1200, live.rotate)
+            else:
+                fun.rain(self)
 
     def palette_commands(self):
         commands = []
@@ -957,7 +1017,7 @@ class MainWindow(QMainWindow, ScreenActions):
         return commands
 
     def open_palette(self):
-        Palette(self.dialog_parent(), self.palette_commands()).open()
+        Palette(self.dialog_parent(), self.palette_commands(), fun.secret_key, self.easter_egg).open()
 
     def run_schedule(self):
         # Starts and stops instances at the times they were given, once for each time it comes round

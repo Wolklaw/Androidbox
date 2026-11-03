@@ -1,19 +1,19 @@
 from PySide6.QtGui import QFontDatabase
 
 COLORS = {
-    "sidebar": "#17191c",
-    "main": "#1d1f23",
-    "surface": "#24272b",
-    "raised": "#2e3136",
-    "hover": "#272a2f",
-    "selected": "#2f3338",
-    "input": "#141619",
-    "line": "#2b2e33",
-    "text": "#e4e6e9",
-    "bright": "#f5f6f7",
-    "muted": "#a3a9b0",
-    "faint": "#7b8189",
-    "dim": "#5c6269",
+    "sidebar": "#10131a",
+    "main": "#151921",
+    "surface": "#1c212b",
+    "raised": "#262c38",
+    "hover": "#212733",
+    "selected": "#2a3142",
+    "input": "#0d1016",
+    "line": "#252b38",
+    "text": "#e6e9f0",
+    "bright": "#fafbfe",
+    "muted": "#a7aebd",
+    "faint": "#7f8799",
+    "dim": "#596073",
     "accent": "#3ddc84",
     "accent_hover": "#5ae497",
     "on_accent": "#0a1f12",
@@ -98,6 +98,23 @@ def stylesheet():
     #Header {{
         border-bottom: 1px solid {c["line"]};
     }}
+    #Dock {{
+        background: {c["raised"]};
+        border: 1px solid {c["line"]};
+        border-radius: 20px;
+    }}
+    #Chip {{
+        background: {c["surface"]};
+        color: {c["muted"]};
+        border-radius: 12px;
+        padding: 4px 10px;
+        font-size: 9pt;
+    }}
+    #HeaderTitle {{
+        color: {c["bright"]};
+        font-family: "{Fonts.strong}";
+        font-size: 14pt;
+    }}
     #Brand {{
         color: {c["bright"]};
         font-family: "{Fonts.strong}";
@@ -111,7 +128,7 @@ def stylesheet():
     #Heading {{
         color: {c["bright"]};
         font-family: "{Fonts.strong}";
-        font-size: 16pt;
+        font-size: 18pt;
     }}
     #Subheading {{
         color: {c["bright"]};
@@ -132,7 +149,7 @@ def stylesheet():
     }}
     #Card {{
         background: {c["surface"]};
-        border-radius: 10px;
+        border-radius: 16px;
     }}
     #Divider {{
         background: {c["line"]};
@@ -141,9 +158,9 @@ def stylesheet():
     }}
     QPushButton {{
         border: none;
-        border-radius: 8px;
-        padding: 0 16px;
-        min-height: 34px;
+        border-radius: 10px;
+        padding: 0 18px;
+        min-height: 36px;
         font-family: "{Fonts.strong}";
         font-size: 10pt;
         color: {c["on_accent"]};
@@ -161,7 +178,7 @@ def stylesheet():
         color: {c["text"]};
     }}
     QPushButton[kind="secondary"]:hover {{
-        background: #383c42;
+        background: #323a4b;
     }}
     QPushButton[kind="danger"] {{
         background: {c["danger"]};
@@ -197,9 +214,9 @@ def stylesheet():
     QLineEdit, QComboBox, QAbstractSpinBox {{
         background: {c["input"]};
         border: 1px solid {c["line"]};
-        border-radius: 8px;
-        padding: 0 10px;
-        min-height: 34px;
+        border-radius: 10px;
+        padding: 0 12px;
+        min-height: 36px;
         color: {c["text"]};
         selection-background-color: {c["accent"]};
         selection-color: {c["on_accent"]};
@@ -268,12 +285,12 @@ def stylesheet():
     QMenu {{
         background: {c["surface"]};
         border: 1px solid {c["line"]};
-        border-radius: 8px;
-        padding: 4px;
+        border-radius: 12px;
+        padding: 6px;
     }}
     QMenu::item {{
-        padding: 7px 14px;
-        border-radius: 6px;
+        padding: 8px 16px;
+        border-radius: 8px;
         color: {c["text"]};
     }}
     QMenu::item:selected {{
@@ -294,6 +311,6 @@ def stylesheet():
     #Dialog {{
         background: {c["surface"]};
         border: 1px solid {c["line"]};
-        border-radius: 12px;
+        border-radius: 18px;
     }}
     """

@@ -1,7 +1,7 @@
 import ctypes
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractButton, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
@@ -165,39 +165,121 @@ class NavButton(SidebarButton):
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
 
 
-class InstanceButton(SidebarButton):
-    def __init__(self, instance):
-        super().__init__(instance.name)
-        self.setFixedHeight(44)
-        self.instance = instance
-        self.state = "off"
+class TabButton(SidebarButton):
+    """A page tab in the header: just its name, with a soft pill behind the one you're on."""
 
-    def set_state(self, state):
-        self.state = state
-        self.update()
+    def __init__(self, text):
+        super().__init__(text)
+        self.setFixedHeight(36)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setFixedWidth(text_width(text, 14) + 36)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.paint_background(painter)
-        tile = QRectF(8, 8, 28, 28)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(COLORS["accent"] if self.isChecked() else COLORS["raised"]))
-        painter.drawRoundedRect(tile, 7, 7)
-        painter.setPen(QColor(COLORS["on_accent"] if self.isChecked() else COLORS["text"]))
-        painter.setFont(text_font(12, strong=True))
-        painter.drawText(tile, Qt.AlignmentFlag.AlignCenter, self.instance.initials)
         painter.setPen(self.ink())
         painter.setFont(text_font(14, strong=self.isChecked()))
-        painter.drawText(QRectF(46, 0, self.width() - 72, self.height()),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                         painter.fontMetrics().elidedText(self.instance.name, Qt.TextElideMode.ElideRight,
-                                                          self.width() - 76))
-        color = STATUS_COLORS.get(self.state)
-        if color:
+        painter.drawText(QRectF(self.rect()), Qt.AlignmentFlag.AlignCenter, self.text())
+
+
+POWER_ZONE = QRectF(-44, 22, 30, 28)
+STATE_WORDS = {"on": "Running", "booting": "Starting", "stopping": "Stopping", "crashed": "Stopped"}
+
+
+class InstanceButton(SidebarButton):
+    """An instance in the sidebar: a live picture of its screen, its name, and what it's doing."""
+
+    power_clicked = Signal()
+
+    def __init__(self, instance):
+        super().__init__(instance.name)
+        self.setFixedHeight(72)
+        self.instance = instance
+        self.state = "off"
+        self.thumb = None
+        self.stats = ""
+        self.power_hit = False
+
+    def power_zone(self):
+        # A small start/stop button at the right of the card, so an instance can be started without opening it
+        return POWER_ZONE.translated(self.width(), 0)
+
+    def mousePressEvent(self, event):
+        self.power_hit = self.hovered and self.state not in ("booting", "stopping")             and self.power_zone().contains(event.position())
+        if not self.power_hit:
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.power_hit:
+            self.power_hit = False
+            if self.power_zone().contains(event.position()):
+                self.power_clicked.emit()
+            return
+        super().mouseReleaseEvent(event)
+
+    def set_state(self, state):
+        self.state = state
+        self.update()
+
+    def set_live(self, thumb, stats):
+        if thumb is not self.thumb or stats != self.stats:
+            self.thumb, self.stats = thumb, stats
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        card = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        painter.setBrush(QColor(COLORS["selected"] if self.isChecked() else COLORS["hover"] if self.hovered
+                                else COLORS["surface"]))
+        painter.setPen(QPen(QColor(COLORS["accent"]), 1.5) if self.isChecked() else Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(card, 14, 14)
+
+        tile = QRectF(11, 10, 32, 52)
+        path = QPainterPath()
+        path.addRoundedRect(tile, 8, 8)
+        painter.save()
+        painter.setClipPath(path)
+        if self.thumb is not None and not self.thumb.isNull():
+            scaled = self.thumb.scaled(tile.size().toSize(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                       Qt.TransformationMode.SmoothTransformation)
+            painter.drawPixmap(tile.toRect(), scaled, QRectF((scaled.width() - tile.width()) / 2, 0,
+                                                              tile.width(), tile.height()).toRect())
+        else:
+            painter.fillPath(path, QColor(COLORS["accent"] if self.isChecked() else COLORS["raised"]))
+            painter.setPen(QColor(COLORS["on_accent"] if self.isChecked() else COLORS["text"]))
+            painter.setFont(text_font(13, strong=True))
+            painter.drawText(tile, Qt.AlignmentFlag.AlignCenter, self.instance.initials)
+        painter.restore()
+
+        if self.hovered and self.state not in ("booting", "stopping"):
+            zone = self.power_zone()
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(color))
-            painter.drawEllipse(QRectF(self.width() - 20, self.height() / 2 - 4, 8, 8))
+            painter.setBrush(QColor(COLORS["raised"]))
+            painter.drawRoundedRect(zone, 9, 9)
+            running = self.state == "on"
+            painter.setPen(QColor(COLORS["red"] if running else COLORS["accent"]))
+            painter.setFont(icon_font(14))
+            painter.drawText(zone, Qt.AlignmentFlag.AlignCenter, ICONS["stop" if running else "power"])
+
+        left = 56
+        painter.setPen(QColor(COLORS["bright"] if self.isChecked() else COLORS["text"]))
+        painter.setFont(text_font(14, strong=True))
+        name = painter.fontMetrics().elidedText(self.instance.name, Qt.TextElideMode.ElideRight, self.width() - left - 12)
+        painter.drawText(QRectF(left, 12, self.width() - left - 12, 20), Qt.AlignmentFlag.AlignVCenter, name)
+
+        color = STATUS_COLORS.get(self.state)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color or COLORS["dim"]))
+        painter.drawEllipse(QRectF(left, 42, 7, 7))
+        painter.setPen(QColor(COLORS["muted"] if self.state == "on" else COLORS["faint"]))
+        painter.setFont(text_font(12))
+        words = STATE_WORDS.get(self.state, "Off")
+        line = f"{words}  ·  {self.stats}" if self.stats and self.state == "on" else words
+        painter.drawText(QRectF(left + 14, 36, self.width() - left - 22, 20), Qt.AlignmentFlag.AlignVCenter,
+                         painter.fontMetrics().elidedText(line, Qt.TextElideMode.ElideRight,
+                                                          self.width() - left - 22))
 
 
 class ProfileButton(QAbstractButton):

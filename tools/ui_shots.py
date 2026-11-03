@@ -1,6 +1,6 @@
 """Renders Androidbox's pages to PNG files, for looking at a change to the UI without starting Android.
 
-    python tools/ui_shots.py OUTPUT_FOLDER [--scale 1.5]
+    python tools/ui_shots.py OUTPUT_FOLDER [--size 1280x840]
 
 It runs the real window against a throwaway Androidbox folder, parked off-screen so it never gets in the
 way, with the real Windows fonts. Nothing in your own Androidbox folder is read or changed.
@@ -26,13 +26,14 @@ emulator.hardware_acceleration = lambda: (True, "")
 from androidbox.ui import tasks  # noqa: E402
 from androidbox.ui.inspector import Inspector  # noqa: E402
 from androidbox.ui.palette import Palette  # noqa: E402
+from androidbox.ui.popout import PopoutWindow  # noqa: E402
 from androidbox.ui.theme import Fonts, stylesheet  # noqa: E402
 from androidbox.ui.window import MainWindow  # noqa: E402
 
-PAGES = ("instances", "screen", "controls", "macros", "library", "settings")
+PAGES = ("instances", "screen", "controls", "macros", "library", "settings", "profile")
 
 
-def settle(app, window):
+def settle(app, window):  # window: any widget to lay out
     # The window is parked off-screen, where Qt is slow to lay out what was just shown, so do it by hand
     for _ in range(3):
         app.processEvents()
@@ -48,6 +49,9 @@ def main():
     arguments = sys.argv[1:]
     if not arguments:
         sys.exit(__doc__)
+    width, height = 1280, 840
+    if "--size" in arguments:
+        width, height = (int(part) for part in arguments[arguments.index("--size") + 1].split("x"))
     folder = Path(arguments[0])
     folder.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
@@ -56,7 +60,7 @@ def main():
     window = MainWindow()
     # Problems go to the console, not into a dialog that would end up in the picture
     tasks.relay.on_error = lambda details: print(details, file=sys.stderr, flush=True)
-    window.resize(1280, 840)
+    window.resize(width, height)
     window.move(-4000, 0)
     window.show()
     app.processEvents()
@@ -72,6 +76,21 @@ def main():
         settle(app, window)
         window.grab().save(str(folder / f"{name}.png"))
         print("saved", folder / f"{name}.png", flush=True)
+    # The screens a new user sees first, which are not pages of the window
+    for name, widget in (("setup", window.setup), ("no_acceleration", window.no_acceleration)):
+        window.stack.addWidget(widget)
+        window.stack.setCurrentWidget(widget)
+        settle(app, window)
+        window.grab().save(str(folder / f"{name}.png"))
+        print("saved", folder / f"{name}.png", flush=True)
+    # A game in its own window, which keeps the narrow vertical toolbar
+    popout = PopoutWindow(window, window.controllers[first])
+    popout.move(-4000, 0)
+    popout.show()
+    settle(app, popout)
+    popout.grab().save(str(folder / "popout.png"))
+    print("saved", folder / "popout.png", flush=True)
+    popout.hide()
     window.select(first)
     window.show_page("screen")
     inspector = Inspector(window)

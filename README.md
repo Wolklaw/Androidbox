@@ -141,10 +141,14 @@ for yourself, one for streaming, one for the family PC, and switch from the menu
 - **Search everything**: press `Ctrl+K` for one search box over pages, instances, actions, settings, saved
   states and macros. Type a few letters, use the arrow keys and press Enter. "proxy" takes you straight to
   the proxy setting, "screenshot" takes one.
-- **Inspector**: press `Ctrl+I` to open a panel beside the running screen with saved states, keeping a game
-  running, the daily start and stop times, network conditions and your macros, so you don't leave the game
-  to change them. It shows the instance's processor and memory use too.
-- **A shorter toolbar**: the tools you use all the time stay on the right, in groups. Everything else,
+- **Inspector**: a panel beside the running screen with saved states, keeping a game running, the daily
+  start and stop times, network conditions and your macros, so you don't leave the game to change them.
+  `Ctrl+I` hides and shows it, and it steps aside by itself when the window is narrow.
+- **Instances in the sidebar**: each one is a card with a live picture of its screen and its processor and
+  memory use, and an instance's pages (Screen, Game controls, Macros, Apps, Settings) are tabs across the
+  top. Hover a card and a small button starts or stops it without opening it. There may be a few Easter eggs, too. Try the logo, the Konami code on All instances, or odd things in
+  the search.
+- **A shorter toolbar**: the tools you use all the time sit in a dock under the screen, in groups. Everything else,
   volume, installing apps, files, location, shake, eco mode, sync, mute and keeping Androidbox on top, is
   under the **...** button, with its name.
 - **Settings search**: a box and a row of section buttons at the top of Settings narrow the page as you

@@ -10,9 +10,11 @@ class Palette(Modal):
     """One search box for everything: pages, instances, actions, settings, saved states and macros. Each
     command is (title, what kind of thing it is, what to do)."""
 
-    def __init__(self, parent, commands):
+    def __init__(self, parent, commands, secret=None, on_secret=None):
         super().__init__(parent, "Search everything", width=580)
         self.commands = commands
+        self.secret = secret
+        self.on_secret = on_secret
         self.field = QLineEdit()
         self.field.setPlaceholderText("Try: screenshot, proxy, start, saved state")
         self.field.textChanged.connect(self.narrow)
@@ -39,6 +41,11 @@ class Palette(Modal):
                 # Titles that start with what was typed come first, then the order they were listed in
                 ranked.append((not (words and title.lower().startswith(words[0])), index, title, kind, action))
         self.results.clear()
+        key = self.secret(text) if self.secret else None
+        if key:
+            item = QListWidgetItem(f"{text.strip()}    ·    Easter egg")
+            item.setData(Qt.ItemDataRole.UserRole, lambda key=key: self.on_secret(key))
+            self.results.addItem(item)
         for _, _, title, kind, action in sorted(ranked, key=lambda found: found[:2])[:RESULT_LIMIT]:
             item = QListWidgetItem(f"{title}    ·    {kind}")
             item.setData(Qt.ItemDataRole.UserRole, action)
