@@ -1,10 +1,23 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QFrame, QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from .theme import COLORS, ICONS
 from .widgets import ToolButton
 
-ALWAYS_ON = {"fullscreen", "popout", "game", "install", "folder", "eco", "sync", "pin"}
+ALWAYS_ON = {"fullscreen", "popout", "game", "more", "inspector"}
+# The rest of the tools, in the More menu: label, host method, the state it shows (if it is a switch), and
+# whether it needs a running Android
+MORE = [
+    ("Volume up", "volume_up", None, True), ("Volume down", "volume_down", None, True), None,
+    ("Install apps…", "choose_apps", None, False), ("Add files to Downloads…", "choose_files", None, False),
+    ("Save files from Android to your PC…", "pull_files", None, True), None,
+    ("Set location…", "choose_location", None, True), ("Shake", "shake", None, True), None,
+    ("Eco mode: lower FPS and CPU use", "toggle_eco", "eco", False),
+    ("Sync input to every running instance", "toggle_sync", "sync", False),
+    ("Mute this instance", "toggle_mute", "mute", True),
+    ("Keep Androidbox on top of other windows", "toggle_pin", "pin", False), None,
+    ("Search everything…    Ctrl+K", "open_palette", None, False),
+]
 
 
 class ToolRail(QWidget):
@@ -14,12 +27,12 @@ class ToolRail(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.compact = False
         self.buttons = {}
+        self.live = False
+        self.states = {}
         groups = [
             [("back", "Back", lambda: host.send_key("GoBack")),
              ("home", "Home", lambda: host.send_key("GoHome")),
              ("recents", "Recent apps", lambda: host.send_key("AppSwitch"))],
-            [("volume_up", "Volume up", lambda: host.send_key("AudioVolumeUp")),
-             ("volume_down", "Volume down", lambda: host.send_key("AudioVolumeDown"))],
             [("rotate", "Rotate  (Ctrl+Shift+O)", host.rotate),
              ("fullscreen", "Full screen  (F11)", host.toggle_fullscreen),
              ("popout", "Open in its own window  (Ctrl+Shift+W)", host.toggle_popout, True)],
@@ -28,15 +41,8 @@ class ToolRail(QWidget):
              ("macro", "Record a macro  (Ctrl+Shift+M)", host.toggle_macro, True)],
             [("camera", "Screenshot  (Ctrl+Shift+S)", host.screenshot),
              ("record", "Record the screen  (Ctrl+Shift+R)", host.toggle_video, True)],
-            [("install", "Install apps", host.choose_apps),
-             ("folder", "Add files to Downloads", host.choose_files),
-             ("download", "Save files from Android to your PC", host.pull_files),
-             ("location", "Set location", host.choose_location),
-             ("shake", "Shake", host.shake)],
-            [("eco", "Eco mode: lower FPS and CPU use", host.toggle_eco, True),
-             ("sync", "Sync input to every running instance", host.toggle_sync, True),
-             ("mute", "Mute this instance", host.toggle_mute, True),
-             ("pin", "Keep Androidbox on top of other windows", host.toggle_pin, True)],
+            [("info", "Inspector: saved states, automation, network  (Ctrl+I)", host.toggle_inspector, True),
+             ("more", "More tools", self.show_more)],
         ]
         column = QWidget()
         layout = QVBoxLayout(column)
@@ -76,10 +82,10 @@ class ToolRail(QWidget):
     def refresh(self, controller, prefs, editing):
         if prefs["compact_tools"] != self.compact:
             self.apply_compact(prefs["compact_tools"])
-        live = controller is not None and controller.on
+        self.live = controller is not None and controller.on
         for name, tool in self.buttons.items():
-            tool.setEnabled(live or name in ALWAYS_ON)
-        states = {
+            tool.setEnabled(self.live or name in ALWAYS_ON)
+        self.states = {
             "popout": self.host.popped,
             "game": prefs["game_controls"],
             "keyboard": editing,
@@ -89,9 +95,30 @@ class ToolRail(QWidget):
             "sync": prefs["sync_input"],
             "mute": bool(controller and controller.instance.muted),
             "pin": prefs["always_on_top"],
+            "info": prefs["inspector"],
         }
-        for name, checked in states.items():
-            self.buttons[name].setChecked(checked)
-        self.buttons["record"].setText(ICONS["stop"] if states["record"] else ICONS["record"])
+        for name, checked in self.states.items():
+            if name in self.buttons:
+                self.buttons[name].setChecked(checked)
+        self.buttons["record"].setText(ICONS["stop"] if self.states["record"] else ICONS["record"])
         self.buttons["popout"].setToolTip("Put back in the main window  (Ctrl+Shift+W)" if self.host.popped
                                           else "Open in its own window  (Ctrl+Shift+W)")
+
+    def more_menu(self):
+        menu = QMenu(self)
+        for item in MORE:
+            if item is None:
+                menu.addSeparator()
+                continue
+            text, method, state, needs_live = item
+            action = menu.addAction(text, getattr(self.host, method))
+            action.setEnabled(self.live or not needs_live)
+            if state:
+                action.setCheckable(True)
+                action.setChecked(self.states.get(state, False))
+        return menu
+
+    def show_more(self):
+        menu = self.more_menu()
+        button = self.buttons["more"]
+        menu.exec(button.mapToGlobal(QPoint(-menu.sizeHint().width() - 4, button.height() - menu.sizeHint().height())))

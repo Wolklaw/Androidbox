@@ -89,8 +89,11 @@ def stylesheet():
     QMainWindow, #Main, #Page, QStackedWidget {{
         background: {c["main"]};
     }}
-    #Sidebar, #Tools {{
+    #Sidebar, #Tools, #Inspector {{
         background: {c["sidebar"]};
+    }}
+    #Inspector {{
+        border-left: 1px solid {c["line"]};
     }}
     #Header {{
         border-bottom: 1px solid {c["line"]};
@@ -175,6 +178,17 @@ def stylesheet():
     }}
     QPushButton[kind="link"]:hover {{
         text-decoration: underline;
+    }}
+    QPushButton[kind="chip"] {{
+        background: {c["surface"]};
+        color: {c["muted"]};
+        border-radius: 14px;
+        min-height: 28px;
+        padding: 0 12px;
+    }}
+    QPushButton[kind="chip"]:hover {{
+        background: {c["raised"]};
+        color: {c["bright"]};
     }}
     QPushButton[size="large"] {{
         min-height: 40px;

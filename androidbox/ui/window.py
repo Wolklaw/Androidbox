@@ -17,6 +17,7 @@ from .controller import Controller, plural
 from .host import ScreenActions
 from .pages import (ControlsPage, InstancesPage, LibraryPage, MacrosPage, NoAccelerationPage, ProfilePage, Progress,
                     ScreenPage, SettingsPage, SetupPage, app_name, show_text)
+from .palette import Palette
 from .popout import PopoutWindow
 from .theme import COLORS, ICONS
 from .widgets import (STATUS_COLORS, InstanceButton, Modal, NavButton, ProfileButton, Toast, ToolButton, button, column,
@@ -114,6 +115,8 @@ class MainWindow(QMainWindow, ScreenActions):
         self.scheduled = {}
         self.schedule_timer = QTimer(self, interval=20_000, timeout=self.run_schedule)
         self.schedule_timer.start()
+        self.live_timer = QTimer(self, interval=3000, timeout=self.update_live)
+        self.live_timer.start()
         self.tray = None
         self.setup_tray()
         self.update_hotkeys()
@@ -331,7 +334,8 @@ class MainWindow(QMainWindow, ScreenActions):
                             f"{controller.instance.android}")
         off = state in ("off", "crashed")
         self.power.setText("Start Android" if off else "Stop Android")
-        self.power.setProperty("kind", None if off else "secondary")
+        # One green button per view: the Screen page already has its own Start Android in the middle
+        self.power.setProperty("kind", None if off and self.page != "screen" else "secondary")
         self.power.setEnabled(state != "stopping")
         self.power.style().unpolish(self.power)
         self.power.style().polish(self.power)
@@ -354,6 +358,7 @@ class MainWindow(QMainWindow, ScreenActions):
         for key, nav in self.nav_buttons.items():
             nav.setChecked(key == name)
         self.overview.setChecked(self.current is None and name == "instances")
+        self.update_power()
         self.update_header()
 
     def show_screen(self):
@@ -899,6 +904,60 @@ class MainWindow(QMainWindow, ScreenActions):
         popout = self.popouts.get(controller.instance.id)
         if popout:
             popout.refresh()
+
+    def update_live(self):
+        if self.page == "instances":
+            self.pages["instances"].update_live()
+
+    def palette_commands(self):
+        commands = []
+        controller = self.active()
+        live = self.live()
+
+        def add(title, kind, action):
+            commands.append((title, kind, action))
+
+        if controller:
+            for name in ("screen", "controls", "macros", "library", "settings"):
+                add(f"Go to {PAGES[name][1]}", "Page", lambda name=name: self.show_page(name))
+        add("Go to All instances", "Page", lambda: self.select(None))
+        add("Go to Profile", "Page", lambda: self.show_page("profile"))
+        for other in self.controllers.values():
+            name = other.instance.name
+            add(f"Open {name}", "Instance", lambda other=other: self.select(other.instance.id))
+            if other.state in ("off", "crashed"):
+                add(f"Start {name}", "Instance", other.start)
+            elif other.state == "on":
+                add(f"Stop {name}", "Instance", other.stop)
+        for title, method, needs_live in (
+                ("Take a screenshot", "screenshot", True), ("Record the screen", "toggle_video", True),
+                ("Rotate the screen", "rotate", True), ("Full screen", "toggle_fullscreen", False),
+                ("Open in its own window", "toggle_popout", False), ("Install apps", "choose_apps", False),
+                ("Add files to Downloads", "choose_files", False), ("Save files from Android", "pull_files", True),
+                ("Set location", "choose_location", True), ("Shake the device", "shake", True),
+                ("Game controls on or off", "toggle_game_controls", False),
+                ("Edit game controls", "edit_controls", False), ("Record a macro", "record_macro", True),
+                ("Eco mode on or off", "toggle_eco", False), ("Mute on or off", "toggle_mute", False),
+                ("Sync input on or off", "toggle_sync", False), ("Keep Androidbox on top", "toggle_pin", False),
+                ("Show or hide the inspector", "toggle_inspector", False)):
+            if live or not needs_live:
+                add(title, "Action", getattr(self, method))
+        if controller:
+            page = self.pages["settings"]
+            page.refresh(controller)
+            for title in page.titles():
+                add(title, "Setting", lambda title=title: (self.show_page("settings"), page.search(title)))
+            if live:
+                for state in controller.emulator.snapshots():
+                    add(f"Load the saved state {state}", "Saved state",
+                        lambda state=state: self.load_snapshot(controller, state))
+                for macro in macros.load():
+                    add(f"Play the macro {macro['name']}", "Macro",
+                        lambda name=macro["name"]: controller.run_macro_named(name))
+        return commands
+
+    def open_palette(self):
+        Palette(self.dialog_parent(), self.palette_commands()).open()
 
     def run_schedule(self):
         # Starts and stops instances at the times they were given, once for each time it comes round

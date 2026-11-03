@@ -155,6 +155,11 @@ class Bridge:
     def screenshot(self):
         return self.request("getScreenshot", pb.ImageFormat(format=pb.ImageFormat.PNG), timeout=20).image
 
+    def thumbnail(self, width, height):
+        # A small picture of the screen, scaled by the emulator, for the instance cards
+        return self.request("getScreenshot", pb.ImageFormat(format=pb.ImageFormat.PNG, width=width, height=height),
+                            timeout=8).image
+
     def set_clipboard(self, text):
         self.request("setClipboard", pb.ClipData(text=text))
 

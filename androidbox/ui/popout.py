@@ -53,6 +53,9 @@ class PopoutWindow(QWidget, ScreenActions):
     def show_screen(self):
         pass
 
+    def open_palette(self):
+        self.main.open_palette()
+
     def show_page(self, name):
         pass
 

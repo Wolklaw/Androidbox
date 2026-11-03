@@ -25,7 +25,8 @@ class ScreenActions:
         for keys, action in (("F11", self.toggle_fullscreen), ("Ctrl+Shift+S", self.screenshot),
                              ("Ctrl+Shift+R", self.toggle_video), ("Ctrl+Shift+K", self.toggle_game_controls),
                              ("Ctrl+Shift+E", self.edit_controls), ("Ctrl+Shift+M", self.toggle_macro),
-                             ("Ctrl+Shift+O", self.rotate), ("Ctrl+Shift+W", self.toggle_popout)):
+                             ("Ctrl+Shift+O", self.rotate), ("Ctrl+Shift+W", self.toggle_popout),
+                             ("Ctrl+K", self.open_palette), ("Ctrl+I", self.toggle_inspector)):
             QShortcut(QKeySequence(keys), self, action)
 
     def live(self):
@@ -34,6 +35,16 @@ class ScreenActions:
 
     def refresh_tools(self):
         self.screen.tools.refresh(self.active(), self.prefs, self.screen.phone.editing)
+        self.screen.refresh_inspector(self.active())
+
+    def volume_up(self):
+        self.send_key("AudioVolumeUp")
+
+    def volume_down(self):
+        self.send_key("AudioVolumeDown")
+
+    def toggle_inspector(self):
+        self.set_pref("inspector", not self.prefs["inspector"])
 
     def send_key(self, key):
         if self.live():

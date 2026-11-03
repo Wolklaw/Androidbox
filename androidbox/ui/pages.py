@@ -5,16 +5,18 @@ import time
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath
-from PySide6.QtWidgets import (QAbstractSpinBox, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QKeySequenceEdit,
-                               QLineEdit, QMenu, QPlainTextEdit, QScrollArea, QSizePolicy, QStackedWidget, QToolButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout,
+                               QKeySequenceEdit, QLabel, QLineEdit, QMenu, QPlainTextEdit, QScrollArea, QSizePolicy,
+                               QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
 from .. import VERSION, claude, installer, instances, keymap, macros, paths, profiles, system
 from .controller import plural
+from .inspector import Inspector
 from .phone import PhoneView
 from .theme import COLORS, ICONS
 from .tools import ToolRail
-from .widgets import Modal, Toggle, avatar, button, column, confirm, divider, glyph_css, label, recolor, row
+from .widgets import (Modal, Toggle, avatar, button, card, column, confirm, divider, glyph_css, label, recolor,
+                      row)
 
 STATES = {"on": "Running", "booting": "Starting…", "stopping": "Shutting down…", "crashed": "Stopped unexpectedly"}
 
@@ -114,17 +116,6 @@ class Page(QScrollArea):
         self.add(label(title, "Heading"), label(text, "Muted", wrap=True))
 
 
-def card(*widgets, spacing=12):
-    frame = QFrame()
-    frame.setObjectName("Card")
-    layout = QVBoxLayout(frame)
-    layout.setContentsMargins(16, 16, 16, 16)
-    layout.setSpacing(spacing)
-    for widget in widgets:
-        layout.addWidget(widget)
-    return frame
-
-
 def setting(title, text, control):
     words = column(label(title, "Subheading"), label(text, "Small", wrap=True), spacing=2)
     line = QWidget()
@@ -133,6 +124,8 @@ def setting(title, text, control):
     layout.setSpacing(24)
     layout.addWidget(words, 1)
     layout.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
+    line.setProperty("search", f"{title} {text}".lower())
+    line.setProperty("title", title)
     return line
 
 
@@ -255,6 +248,9 @@ class ScreenPage(QWidget):
         self.stack.addWidget(self.state)
         self.stack.addWidget(self.phone)
         self.tools = ToolRail(host)
+        self.inspector = Inspector(host)
+        self.inspector.hide()
+        self.edge_to_edge = False
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -264,10 +260,21 @@ class ScreenPage(QWidget):
         self.holder_layout.setContentsMargins(16, 16, 16, 16)
         self.holder_layout.addWidget(self.stack)
         layout.addWidget(self.holder, 1)
+        layout.addWidget(self.inspector)
         layout.addWidget(self.tools)
         self.phone.editing_changed.connect(lambda _: host.refresh_tools())
 
+    def refresh_inspector(self, controller):
+        # Beside the running screen, when asked for, and out of the way in full screen
+        show = bool(controller and controller.on and self.host.prefs["inspector"] and not self.edge_to_edge
+                    and self.stack.currentWidget() is self.phone)
+        self.inspector.setVisible(show)
+        if show:
+            self.inspector.refresh(controller)
+
     def set_edge_to_edge(self, flag):
+        self.edge_to_edge = flag
+        self.refresh_inspector(self.host.active())
         self.holder_layout.setContentsMargins(0, 0, 0, 0) if flag else \
             self.holder_layout.setContentsMargins(16, 16, 16, 16)
 
@@ -280,6 +287,7 @@ class ScreenPage(QWidget):
             self.stack.setCurrentWidget(self.state)
             self.state.show_state(controller, popped)
         self.tools.refresh(controller, self.host.prefs, self.phone.editing)
+        self.refresh_inspector(controller)
 
 
 class ControlsPage(Page):
@@ -440,10 +448,56 @@ class MacrosPage(Page):
         controller.macros_changed.emit()
 
 
+# Shorter names for the jump chips, so the whole row fits
+CHIP_NAMES = {"Saved states": "States", "Troubleshooting": "Fixes", "Danger zone": "Danger"}
+
+
 class SettingsPage(Page):
     def __init__(self, host):
-        super().__init__()
+        super().__init__(width=820)
         self.host = host
+        self.sections = []
+
+    def add_finder(self):
+        # A search box that narrows the settings as you type, and a chip per section that jumps to it
+        self.sections = []
+        for index in range(self.body.count()):
+            frame = self.body.itemAt(index).widget()
+            heading = frame.findChild(QLabel, "Section") if frame and frame.objectName() == "Card" else None
+            if heading:
+                self.sections.append((heading.text(), frame))
+        box = QLineEdit()
+        box.setPlaceholderText("Search settings")
+        box.setClearButtonEnabled(True)
+        box.textChanged.connect(self.filter)
+        self.box = box
+        chips = [button(CHIP_NAMES.get(name, name), lambda _=False, frame=frame: self.ensureWidgetVisible(frame, 0, 16),
+                        kind="chip") for name, frame in self.sections]
+        self.chips = column(box, row(*chips, None, spacing=6), spacing=10)
+        self.body.insertWidget(2, self.chips)
+
+    def search(self, text):
+        self.box.setText(text)
+        self.verticalScrollBar().setValue(0)
+
+    def titles(self):
+        return [widget.property("title") for _, frame in self.sections
+                for widget in frame.findChildren(QWidget) if widget.property("title")]
+
+    def filter(self, text):
+        words = text.lower().split()
+        for name, frame in self.sections:
+            lines = [widget for widget in frame.findChildren(QWidget) if widget.property("search")]
+            title = name.lower()
+            shown = 0
+            for line in lines:
+                visible = all(word in title or word in line.property("search") for word in words)
+                line.setVisible(visible)
+                shown += visible
+            for divider_line in frame.findChildren(QFrame, "Divider"):
+                divider_line.setVisible(not words)
+            # Sections made of one bare control, like Name, have no searchable lines and match by title
+            frame.setVisible(not words or shown > 0 or (not lines and all(word in title for word in words)))
 
     def refresh(self, controller):
         self.clear()
@@ -593,12 +647,30 @@ class SettingsPage(Page):
         self.add(card(label("Danger zone", "Section"),
                       setting("Factory reset", "Erase all apps and data, like a new phone.", reset), divider(),
                       setting("Delete instance", "Remove this instance and everything in it.", delete)))
+        self.add_finder()
 
 
 class InstancesPage(Page):
     def __init__(self, host):
-        super().__init__(width=820)
+        super().__init__(width=900)
         self.host = host
+        self.live = []
+
+    def update_live(self):
+        # Fresh pictures and meters, without rebuilding the cards under the mouse
+        for controller, thumb, stats in self.live:
+            try:
+                if controller.thumb:
+                    thumb.setPixmap(controller.thumb.scaled(thumb.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                                                            Qt.TransformationMode.SmoothTransformation))
+                elif thumb.pixmap():
+                    thumb.clear()
+                    thumb.setText(controller.instance.initials)
+                usage = controller.usage
+                stats.setText(f"{usage[0]:.0f}% CPU  ·  {usage[1]:.1f} GB" if usage else "")
+            except RuntimeError:
+                # The card was rebuilt while this one was waiting to be updated
+                continue
 
     def refresh(self):
         self.clear()
@@ -611,17 +683,27 @@ class InstancesPage(Page):
         start_all.setEnabled(any(c.state in ("off", "crashed") for c in host.controllers.values()))
         tile = button("Side by side", host.arrange, kind="secondary")
         tile.setEnabled(any(c.on for c in host.controllers.values()))
-        self.add(row(button("New instance", host.new_instance),
+        self.add(row(button("New instance", host.new_instance, kind="secondary" if host.controllers else None),
                      button("Restore a backup", host.restore_backup, kind="secondary"), tile, start_all, stop_all,
                      None))
-        rows = []
+        tiles = []
+        self.live = []
         for controller in host.controllers.values():
             instance = controller.instance
             color = COLORS["green"] if controller.state == "on" else COLORS["faint"]
+            thumb = QLabel(instance.initials)
+            thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            thumb.setFixedSize(66, max(66, round(66 * instance.height / instance.width)))
+            thumb.setStyleSheet(f"background: {COLORS['input']}; border-radius: 8px; color: {COLORS['faint']}; "
+                                "font-size: 18pt;")
+            stats = label("", "Small")
+            self.live.append((controller, thumb, stats))
             words = column(label(instance.name, "Subheading"),
-                           label(f"<span style='color:{color}'>●</span>  {STATES.get(controller.state, 'Off')}  ·  "
-                                 f"{instance.android}  ·  {instance.resolution}  ·  {instance.cores} cores  ·  "
-                                 f"{instance.ram // 1024} GB  ·  {instance.fps} FPS", "Small"), spacing=2)
+                           label(f"<span style='color:{color}'>●</span>  {STATES.get(controller.state, 'Off')}",
+                                 "Muted"),
+                           label(f"{instance.android}  ·  {instance.resolution}", "Small"),
+                           label(f"{instance.cores} cores  ·  {instance.ram // 1024} GB  ·  {instance.fps} FPS",
+                                 "Small"), stats, spacing=2)
             if controller.state in ("off", "crashed"):
                 power = button("Start", controller.start)
             else:
@@ -635,11 +717,25 @@ class InstancesPage(Page):
                 (None, None),
                 ("Delete", lambda c=controller: host.delete_instance(c)),
             ])
-            rows.append(row(avatar(instance.initials, COLORS["raised"]), words, None, power,
-                            button("Open", lambda c=controller: host.select(c.instance.id), kind="secondary"),
-                            more, spacing=10))
-        if rows:
-            self.add(card(label(f"Your instances · {len(rows)}", "Section"), *rows, spacing=12))
+            actions = row(power, button("Open", lambda c=controller: host.select(c.instance.id), kind="secondary"),
+                          None, more, spacing=8)
+            tiles.append(card(row(thumb, column(words, None, actions, spacing=10), spacing=14), spacing=0))
+        if tiles:
+            grid = QWidget()
+            layout = QGridLayout(grid)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(12)
+            for index, tile_card in enumerate(tiles):
+                layout.addWidget(tile_card, index // 2, index % 2)
+            layout.setColumnStretch(0, 1)
+            layout.setColumnStretch(1, 1)
+            self.add(label(f"Your instances · {len(tiles)}", "Section"), grid)
+            self.update_live()
+        else:
+            self.add(card(label("Start your first instance", "Heading"),
+                          label("An instance is a separate Android with its own apps, accounts and settings.",
+                                "Muted", wrap=True),
+                          row(button("New instance", host.new_instance), None)))
 
         sync = Toggle(host.prefs["sync_input"])
         sync.toggled.connect(lambda on: host.set_pref("sync_input", on))

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QPixmap
 
 from .. import emulator, installer, instances, macros, paths, profiles, system
 from ..bridge import Bridge
@@ -65,6 +65,8 @@ class Controller(QObject):
         self.usage = None
         self.sample = None
         self.ready_at = 0.0
+        self.thumb = None
+        self.thumbing = False
         self.relaunched = 0.0
         self.timer = QTimer(self, interval=1500, timeout=self.poll)
         self.timer.start()
@@ -159,6 +161,28 @@ class Controller(QObject):
             self.ready()
         elif missing:
             self.relaunch()
+        if phase == "on":
+            if self.ticks % 6 == 0:
+                self.refresh_thumb()
+        elif self.thumb:
+            self.thumb = None
+
+    def refresh_thumb(self):
+        # A small picture of the screen about every ten seconds, for the instance cards
+        bridge = self.bridge
+        if not bridge or self.thumbing:
+            return
+        self.thumbing = True
+        width = 132
+        height = round(width * self.instance.height / self.instance.width)
+
+        def fetched(png):
+            self.thumbing = False
+            picture = QPixmap()
+            if picture.loadFromData(png):
+                self.thumb = picture
+
+        background(lambda: bridge.thumbnail(width, height), fetched, lambda _: setattr(self, "thumbing", False))
 
     def relaunch(self):
         # Opens a closed or crashed game again, at most every half minute so a game that dies on start can't

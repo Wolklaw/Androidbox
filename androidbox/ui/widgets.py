@@ -76,6 +76,17 @@ def button(text, on_click=None, kind=None, size=None):
     return widget
 
 
+def card(*widgets, spacing=12):
+    frame = QFrame()
+    frame.setObjectName("Card")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(16, 16, 16, 16)
+    layout.setSpacing(spacing)
+    for widget in widgets:
+        layout.addWidget(widget)
+    return frame
+
+
 def divider():
     line = QFrame()
     line.setObjectName("Divider")

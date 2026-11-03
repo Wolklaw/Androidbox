@@ -41,7 +41,7 @@ stores stays in one folder you can delete.
 > Nothing to install beyond what Google ships, nothing bundled, and because it can't be rooted, banking
 > apps and games with root detection just work.
 
-<p align="center"><img src="docs/screen.png" alt="Androidbox running Android 15" width="820"></p>
+<p align="center"><img src="docs/screen.png" alt="Androidbox running Android 16, with the inspector open beside the screen" width="820"></p>
 
 ## Getting started
 
@@ -136,9 +136,24 @@ for yourself, one for streaming, one for the family PC, and switch from the menu
   already keeps up to date. Pick the folder once on each PC and your layouts, macros and presets follow
   you. There is no server and no login, and Androidbox uploads nothing itself.
 
+### Find anything, stay in the game
+
+- **Search everything**: press `Ctrl+K` for one search box over pages, instances, actions, settings, saved
+  states and macros. Type a few letters, use the arrow keys and press Enter. "proxy" takes you straight to
+  the proxy setting, "screenshot" takes one.
+- **Inspector**: press `Ctrl+I` to open a panel beside the running screen with saved states, keeping a game
+  running, the daily start and stop times, network conditions and your macros, so you don't leave the game
+  to change them. It shows the instance's processor and memory use too.
+- **A shorter toolbar**: the tools you use all the time stay on the right, in groups. Everything else,
+  volume, installing apps, files, location, shake, eco mode, sync, mute and keeping Androidbox on top, is
+  under the **...** button, with its name.
+- **Settings search**: a box and a row of section buttons at the top of Settings narrow the page as you
+  type or jump to a section.
+
 ### Several Androids at once
 
-Every instance has its own apps, accounts and settings. Create, clone, back up to a single file,
+Every instance has its own apps, accounts and settings. **All instances** shows each one as a card with a
+live picture of its screen and its processor and memory use. Create, clone, back up to a single file,
 restore, start them all at once, open any instance in its own window, tile them side by side, and
 mirror your input to all of them at the same time.
 
@@ -419,6 +434,8 @@ python -m venv .venv
 - `androidbox/system.py`, `relocate.py`, `hotkeys.py`: what the PC has, shortcuts and Windows startup,
   moving the files to another drive, and shortcuts that work in any program
 - `androidbox/diagnostics.py`: the zip of logs and findings for bug reports
+- `androidbox/ui/palette.py`, `inspector.py`: the Ctrl+K search and the panel beside the screen
+- `tools/ui_shots.py`: renders every page to PNG files, off-screen, to check a change to the UI by eye
 - `androidbox/claude.py`: the Claude Code helper, as an MCP server and a command line
 - `androidbox/updates.py`: asks GitHub for the newest release, then downloads and verifies its installer
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
