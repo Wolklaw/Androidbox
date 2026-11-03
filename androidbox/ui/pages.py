@@ -504,6 +504,9 @@ class SettingsPage(Page):
         proxy.setPlaceholderText("host:port")
         proxy.setMaximumWidth(260)
         proxy.editingFinished.connect(lambda: host.set_hardware(controller, proxy=proxy.text().strip()))
+        network = choice([(label_, key) for key, (label_, _, _) in instances.NETWORK_PROFILES.items()],
+                         instance.network)
+        network.currentIndexChanged.connect(lambda: controller.set_network(network.currentData()))
         self.add(card(label("Extras", "Section"),
                       setting("Eco mode", "Draws fewer frames and lowers Android's CPU priority. Good for "
                                           "idle games running in the background.", eco), divider(),
@@ -522,7 +525,46 @@ class SettingsPage(Page):
                                                "host:port, or http://user:pass@host:port if it needs a login. "
                                                "Good for giving each instance its own IP. Blank means none. "
                                                "Applies the next time Android starts.",
-                              proxy)))
+                              proxy), divider(),
+                      setting("Network conditions", "Slows this instance's connection to what a phone would get, "
+                                                    "to see how an app or game copes. Applies right away.",
+                              network)))
+
+        keep = QLineEdit(instance.keep_running)
+        keep.setPlaceholderText("com.example.game")
+        keep.setMaximumWidth(260)
+        keep.editingFinished.connect(lambda: host.set_automation(controller, keep_running=keep.text().strip()))
+        times = {}
+        for key in ("start_at", "stop_at"):
+            field = QLineEdit(getattr(instance, key))
+            field.setPlaceholderText("08:30")
+            field.setMaximumWidth(120)
+            field.editingFinished.connect(lambda key=key, field=field: host.set_time(controller, key, field.text()))
+            times[key] = field
+        self.add(card(label("Automation", "Section"),
+                      setting("Keep a game running", "Opens this game again whenever it closes or crashes, which "
+                                                     "suits idle and farming games. Use its package name, shown on "
+                                                     "the Apps page. Blank means off.", keep), divider(),
+                      setting("Start every day at", "Androidbox starts this instance at this time, 24-hour like "
+                                                    "08:30. It has to be open, in the tray is fine. Blank means "
+                                                    "never.", times["start_at"]), divider(),
+                      setting("Stop every day at", "Shuts this instance down at this time. Blank means never.",
+                              times["stop_at"])))
+
+        saved = controller.emulator.snapshots()
+        states = choice([(name, name) for name in saved] or [("None saved yet", "")], saved[0] if saved else "")
+        states.setEnabled(bool(saved))
+        load = button("Load", lambda: host.load_snapshot(controller, states.currentData()), kind="secondary")
+        load.setEnabled(bool(saved))
+        remove = button("Delete", lambda: host.delete_snapshot(controller, states.currentData()), kind="secondary")
+        remove.setEnabled(bool(saved))
+        take = button("Save…", lambda: host.save_snapshot(controller), kind="secondary")
+        self.add(card(label("Saved states", "Section"),
+                      setting("Save the current state", "Keeps this instance exactly as it is, apps, data and "
+                                                        "screen, so you can come back to this moment. Android has "
+                                                        "to be running.", take), divider(),
+                      setting("Go back to a saved state", "Loads one you saved earlier. Anything done since is "
+                                                          "lost.", row(states, load, remove))))
 
         preset = button("Save…", lambda: host.save_preset(controller), kind="secondary")
         backup = button("Back up", lambda: host.back_up(controller), kind="secondary")
@@ -534,7 +576,11 @@ class SettingsPage(Page):
                                                        "restore from All instances.", backup)))
 
         redownload = button("Redownload", lambda: host.redownload_image(controller), kind="secondary")
+        diagnose = button("Save…", lambda: host.collect_diagnostics(controller), kind="secondary")
         self.add(card(label("Troubleshooting", "Section"),
+                      setting("Diagnostics", "Saves Android's log, this instance's settings and a plain summary of "
+                                             "anything that looks wrong, such as an ARM translator crash, to one "
+                                             "zip. Useful to attach to a bug report.", diagnose), divider(),
                       setting(f"{instance.android} image", "Gets this instance's Android system image from Google "
                                                             "again. Worth trying if Android reports it isn't Play "
                                                             "Protect certified, or otherwise seems broken.",

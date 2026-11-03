@@ -153,6 +153,24 @@ a game: point it at `Androidbox.exe` with `--instance <name or id> --launch <pac
 `--background` starts the instance without raising the Androidbox window (handy for autostart), and
 leaving out `--launch` just opens or switches to that instance.
 
+### Saved states
+
+Save an instance exactly as it is, with its apps, its data and what's on screen, then come back to that
+moment any time. Handy before a boss fight, before trying a risky setting, or to keep a clean install to
+return to. Saving takes a few seconds, loading even less. Find it in an instance's Settings under **Saved
+states**.
+
+### Automation
+
+In an instance's Settings, **Automation** can keep a game running, opening it again whenever it closes or
+crashes, which suits idle and farming games. It can also start and stop the instance at the same time
+every day. Androidbox has to be open for either to work, and the tray counts.
+
+### Network conditions
+
+Slow an instance's connection to 4G, 3G, EDGE or GPRS speeds, with the delay that goes with them, to see
+how an app or game copes with a poor signal. It applies straight away, with no restart.
+
 ### Updates
 
 Androidbox checks GitHub for a newer release when it starts and every few hours while it runs. When one
@@ -186,10 +204,12 @@ you.
 ### Let Claude Code test your apps
 
 Off by default. Turn on **Let Claude Code control Android** in Settings and Androidbox writes a helper
-to `%LOCALAPPDATA%\Androidbox\claude`, with a `README.md` there showing the exact command to register
-it as an MCP server (`claude mcp add ...`). Claude Code then gets tools for your running instances:
-screenshots returned inline, reading what's on screen, tapping, swiping, typing, installing and
-launching apps, and reading logs. The same folder also has a plain command-line version of the same
+to `%LOCALAPPDATA%\Androidbox\claude` and, if Claude Code is installed, registers it as an MCP server
+for you (turning the switch off removes it again). If it isn't found, the `README.md` in that folder shows
+the `claude mcp add ...` command to run yourself. Claude Code then gets tools for your running
+instances: screenshots returned inline, reading what's on screen or its full accessibility tree, waiting
+for text to appear or go away, tapping, swiping, typing, installing and launching apps, recording the
+screen, and reading logs. The same folder also has a plain command-line version of the same
 features, for scripting or when you'd rather not register an MCP server. Turn the switch off and the
 helper is deleted, and it refuses to run either way while the switch is off.
 
@@ -203,6 +223,8 @@ helper is deleted, and it refuses to run either way while the switch is off.
 - Rotate, shake, volume and GPS location
 - Full screen, an FPS counter that also shows how much processor and memory the emulator uses, and eco
   mode for idle games
+- **Diagnostics**: one button saves Android's log, an instance's settings and a plain summary of anything
+  that looks wrong, such as an ARM translator crash, to a zip you can attach to a bug report
 - Move everything Androidbox stores to another drive when your C: drive runs short
 - Automatic updates, with a check for new releases that you can turn off
 
@@ -396,6 +418,7 @@ python -m venv .venv
 - `androidbox/macros.py`, `browser.py`: macros, with their editing, and the ad-free browser
 - `androidbox/system.py`, `relocate.py`, `hotkeys.py`: what the PC has, shortcuts and Windows startup,
   moving the files to another drive, and shortcuts that work in any program
+- `androidbox/diagnostics.py`: the zip of logs and findings for bug reports
 - `androidbox/claude.py`: the Claude Code helper, as an MCP server and a command line
 - `androidbox/updates.py`: asks GitHub for the newest release, then downloads and verifies its installer
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws

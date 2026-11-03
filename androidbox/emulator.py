@@ -1,6 +1,7 @@
 import contextlib
 import ctypes
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -82,6 +83,9 @@ class Emulator:
             args.append("-no-snapshot-load")
         if self.instance.proxy:
             args += ["-http-proxy", self.instance.proxy]
+        if self.instance.network in instances.NETWORK_PROFILES:
+            _, speed, delay = instances.NETWORK_PROFILES[self.instance.network]
+            args += ["-netspeed", speed, "-netdelay", delay]
         self.quick_boot = (self.instance.folder / "snapshots" / "default_boot").exists() and not (wipe or fresh)
         self.started = time.monotonic()
         paths.LOGS.mkdir(parents=True, exist_ok=True)
@@ -165,9 +169,9 @@ class Emulator:
         except (OSError, ValueError):
             return None
 
-    def console(self, command):
+    def console(self, command, timeout=5):
         token = paths.CONSOLE_TOKEN.read_text().strip()
-        with socket.create_connection(("127.0.0.1", self.instance.console_port), timeout=5) as connection:
+        with socket.create_connection(("127.0.0.1", self.instance.console_port), timeout=timeout) as connection:
             connection.sendall(f"auth {token}\r\n{command}\r\nquit\r\n".encode())
             reply = b""
             try:
@@ -176,6 +180,33 @@ class Emulator:
             except OSError:
                 pass
         return reply.decode(errors="replace")
+
+    def set_network(self, profile):
+        _, speed, delay = instances.NETWORK_PROFILES.get(profile, instances.NETWORK_PROFILES[""])
+        return all("KO" not in self.console(command) for command in (f"network speed {speed}",
+                                                                      f"network delay {delay}"))
+
+    def snapshots(self):
+        # Saved states live as folders beside Android's own quick-boot snapshot
+        folder = self.instance.folder / "snapshots"
+        try:
+            return sorted((item.name for item in folder.iterdir() if item.is_dir() and item.name != "default_boot"),
+                          key=str.lower)
+        except OSError:
+            return []
+
+    def save_snapshot(self, name):
+        return "KO" not in self.console(f"avd snapshot save {snapshot_name(name)}", timeout=120)
+
+    def load_snapshot(self, name):
+        return "KO" not in self.console(f"avd snapshot load {snapshot_name(name)}", timeout=120)
+
+    def delete_snapshot(self, name):
+        return "KO" not in self.console(f"avd snapshot delete {snapshot_name(name)}", timeout=60)
+
+    def app_running(self, package):
+        code, output = self.adb("shell", "pidof", "-s", package, timeout=5)
+        return code == 0 and output.strip().isdigit()
 
     def adb(self, *args, timeout=30):
         return run([str(paths.ADB), "-s", self.instance.serial, *args], timeout)
@@ -323,6 +354,11 @@ def short_path(path):
     buffer = ctypes.create_unicode_buffer(1024)
     ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, len(buffer))
     return buffer.value or str(path)
+
+
+def snapshot_name(name):
+    # The console takes one word, and the folder name has to be safe on Windows
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", name.strip()).strip("_")[:40] or "state"
 
 
 def last_line(output):

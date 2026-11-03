@@ -32,6 +32,14 @@ RESOLUTIONS = {
     "OUYA": (1920, 1080, 320),
     "GameStick": (1280, 720, 213),
 }
+# What to emulate: the label, then the emulator's -netspeed and -netdelay names
+NETWORK_PROFILES = {
+    "": ("Your connection", "full", "none"),
+    "lte": ("4G", "lte", "none"),
+    "umts": ("3G", "umts", "umts"),
+    "edge": ("Slow (EDGE)", "edge", "edge"),
+    "gprs": ("Very slow (GPRS)", "gprs", "gprs"),
+}
 SIZE_LIMITS = {"width": (320, 3840), "height": (320, 3840), "density": (120, 640)}
 
 HARDWARE = {
@@ -72,6 +80,13 @@ class Instance:
     storage_path: str = ""
     # An HTTP proxy for all of this instance's network traffic, as host:port or http://user:pass@host:port
     proxy: str = ""
+    # The network quality to emulate, a key of NETWORK_PROFILES. Empty means the PC's own connection
+    network: str = ""
+    # A game, by package name, that Androidbox opens again whenever it stops running
+    keep_running: str = ""
+    # Times of day, as HH:MM, when Androidbox starts and stops this instance by itself
+    start_at: str = ""
+    stop_at: str = ""
 
     @property
     def android(self):

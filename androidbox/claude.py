@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+import threading
 
 from . import paths
 
@@ -12,12 +14,13 @@ Androidbox's "Let Claude Code control Android" switch is on.
 
 ## As an MCP server (recommended)
 
-Register it once, from any folder:
+Androidbox registers this for you when it finds `claude` on your PATH. If it didn't, register it once, from
+any folder:
 
     claude mcp add --scope user androidbox -- python "{tool}" mcp
 
 Claude Code then gets tools for your running instances: list_instances, screenshot (returned inline, no
-file to save and read back), read_screen, tap, tap_text, swipe, type_text, key, install_apk, launch_app,
+file to save and read back), read_screen, ui_tree, wait_for_text, screen_record, tap, tap_text, swipe, type_text, key, install_apk, launch_app,
 stop_app, logcat and adb. Run `/mcp` in Claude Code to check it connected.
 
 ## As a command line
@@ -46,6 +49,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -133,11 +138,14 @@ def resolve(name):
                   + ", ".join(item["name"] for item in live))
 
 
-def screen_nodes(serial):
+def screen_xml(serial):
     adb(serial, "shell", "uiautomator", "dump", "/sdcard/androidbox-ui.xml")
-    xml = adb(serial, "exec-out", "cat", "/sdcard/androidbox-ui.xml")
+    return adb(serial, "exec-out", "cat", "/sdcard/androidbox-ui.xml")
+
+
+def screen_nodes(serial):
     nodes = []
-    for node in ET.fromstring(xml).iter("node"):
+    for node in ET.fromstring(screen_xml(serial)).iter("node"):
         box = re.findall(r"\d+", node.get("bounds", ""))
         if len(box) == 4:
             x1, y1, x2, y2 = map(int, box)
@@ -170,6 +178,38 @@ def tool_read_screen(arguments):
     lines = [f"{'*' if n['clickable'] else ' '} {n['class']:<14} {(n['text'] or n['desc'] or n['id'])!r:<40} "
              f"{n['center']}" for n in screen_nodes(serial) if n["text"] or n["desc"] or n["clickable"]]
     return [text_content("\n".join(lines) or "nothing on screen")]
+
+
+def tool_ui_tree(arguments):
+    xml = screen_xml(resolve(arguments.get("instance")))
+    return [text_content(xml if len(xml) <= 60000 else xml[:60000] + "\n... cut off, use read_screen for a summary")]
+
+
+def tool_wait_for_text(arguments):
+    serial = resolve(arguments.get("instance"))
+    wanted, gone = arguments["text"].lower(), bool(arguments.get("gone"))
+    deadline = time.monotonic() + min(max(arguments.get("timeout", 20), 1), 120)
+    while True:
+        try:
+            matches = [n for n in screen_nodes(serial) if wanted in (n["text"] + " " + n["desc"]).lower()]
+        except (Problem, ET.ParseError):
+            # uiautomator can't dump while the screen is animating, so try again
+            matches = None
+        if matches is not None and bool(matches) != gone:
+            return [text_content("gone" if gone else f"found at {matches[0]['center']}")]
+        if time.monotonic() > deadline:
+            raise Problem(f"timed out waiting for {arguments['text']!r} to " + ("go away" if gone else "show up"))
+        time.sleep(1)
+
+
+def tool_screen_record(arguments):
+    serial = resolve(arguments.get("instance"))
+    seconds = min(max(arguments.get("seconds", 10), 1), 60)
+    path = arguments.get("path") or os.path.join(tempfile.gettempdir(), f"androidbox-{int(time.time())}.mp4")
+    adb(serial, "shell", "screenrecord", "--time-limit", str(seconds), "/sdcard/androidbox-clip.mp4")
+    adb(serial, "pull", "/sdcard/androidbox-clip.mp4", path)
+    adb(serial, "shell", "rm", "/sdcard/androidbox-clip.mp4", check=False)
+    return [text_content(f"saved {seconds} seconds to {path}")]
 
 
 def tool_tap(arguments):
@@ -246,6 +286,19 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": INSTANCE_PROPERTY}},
     {"name": "read_screen", "description": "List the text, labels and tap targets currently on screen.",
      "inputSchema": {"type": "object", "properties": INSTANCE_PROPERTY}},
+    {"name": "ui_tree", "description": "The raw accessibility tree of the screen as XML, for when read_screen "
+                                       "leaves something out.",
+     "inputSchema": {"type": "object", "properties": INSTANCE_PROPERTY}},
+    {"name": "wait_for_text", "description": "Wait until text shows up on screen, or with gone set, until it "
+                                             "disappears. Fails when the timeout runs out.",
+     "inputSchema": {"type": "object", "required": ["text"], "properties": {
+         **INSTANCE_PROPERTY, "text": {"type": "string"}, "gone": {"type": "boolean"},
+         "timeout": {"type": "integer", "description": "Seconds to wait, up to 120. Defaults to 20."}}}},
+    {"name": "screen_record", "description": "Record the screen as an MP4 for a few seconds and save it on "
+                                             "this PC. Returns where.",
+     "inputSchema": {"type": "object", "properties": {
+         **INSTANCE_PROPERTY, "seconds": {"type": "integer", "description": "Up to 60. Defaults to 10."},
+         "path": {"type": "string", "description": "Where to save it. Defaults to the temp folder."}}}},
     {"name": "tap", "description": "Tap a point on the screen.",
      "inputSchema": {"type": "object", "required": ["x", "y"], "properties": {
          **INSTANCE_PROPERTY, "x": {"type": "integer"}, "y": {"type": "integer"}}}},
@@ -282,6 +335,7 @@ TOOLS = [
 ]
 DISPATCH = {
     "list_instances": tool_list_instances, "screenshot": tool_screenshot, "read_screen": tool_read_screen,
+    "ui_tree": tool_ui_tree, "wait_for_text": tool_wait_for_text, "screen_record": tool_screen_record,
     "tap": tool_tap, "tap_text": tool_tap_text, "swipe": tool_swipe, "type_text": tool_type_text, "key": tool_key,
     "install_apk": tool_install_apk, "launch_app": tool_launch_app, "stop_app": tool_stop_app,
     "logcat": tool_logcat, "adb": tool_adb,
@@ -402,7 +456,31 @@ def enable():
     TOOL.write_text(TOOL_TEXT.replace("{CONSOLE_PORTS}", repr(list(instances.CONSOLE_PORTS)))
                     .replace("{ADB_SERVER_PORT}", emulator.ADB_SERVER_PORT), encoding="utf-8")
     GUIDE.write_text(GUIDE_TEXT.format(tool=TOOL), encoding="utf-8")
+    threading.Thread(target=register, daemon=True).start()
 
 
 def disable():
     shutil.rmtree(FOLDER, ignore_errors=True)
+    threading.Thread(target=unregister, daemon=True).start()
+
+
+def mcp_command(*arguments):
+    """Runs `claude mcp ...`; False when Claude Code isn't installed or the command failed, in which case the
+    guide still shows how to register by hand."""
+    claude = shutil.which("claude")
+    if not claude:
+        return False
+    try:
+        return subprocess.run([claude, "mcp", *arguments], capture_output=True, timeout=60,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def register():
+    mcp_command("remove", "--scope", "user", "androidbox")
+    return mcp_command("add", "--scope", "user", "androidbox", "--", "python", str(TOOL), "mcp")
+
+
+def unregister():
+    return mcp_command("remove", "--scope", "user", "androidbox")

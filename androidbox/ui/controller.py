@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -63,6 +64,8 @@ class Controller(QObject):
         self.applied_fps = None
         self.usage = None
         self.sample = None
+        self.ready_at = 0.0
+        self.relaunched = 0.0
         self.timer = QTimer(self, interval=1500, timeout=self.poll)
         self.timer.start()
         self.video_timer = QTimer(self, singleShot=True, timeout=self.video_finished)
@@ -109,9 +112,13 @@ class Controller(QObject):
             if phase == "on" and wants_package:
                 package = self.emulator.foreground_app() or package
             token = self.emulator.grpc_token() if phase in ("booting", "on") else None
-            return phase, package, token, self.emulator.usage() if phase == "on" else None
+            # Only a game that has been asked for is looked for, every few checks, once Android has had time to
+            # open it by itself
+            keep = self.instance.keep_running
+            missing = phase == "on" and bool(keep) and self.ticks % 4 == 0 and time.monotonic() - self.ready_at > 90                 and not self.emulator.app_running(keep)
+            return phase, package, token, self.emulator.usage() if phase == "on" else None, missing
         except OSError:
-            return self.phase, self.package, None, None
+            return self.phase, self.package, None, None, False
         finally:
             self.checking = False
 
@@ -124,7 +131,7 @@ class Controller(QObject):
             busy = (sample[1] - previous[1]) / max(sample[0] - previous[0], 0.001) / system.host_cores()
             self.usage = (max(0.0, min(100.0, busy * 100)), sample[2] / (1 << 30))
 
-    def apply(self, phase, package, token, sample, epoch):
+    def apply(self, phase, package, token, sample, missing, epoch):
         if epoch != self.epoch or self.stopping:
             return
         self.measure(sample)
@@ -150,6 +157,19 @@ class Controller(QObject):
             self.changed.emit()
         if ready:
             self.ready()
+        elif missing:
+            self.relaunch()
+
+    def relaunch(self):
+        # Opens a closed or crashed game again, at most every half minute so a game that dies on start can't
+        # keep the instance busy
+        now = time.monotonic()
+        if now - self.relaunched < 30:
+            return
+        self.relaunched = now
+        package = self.instance.keep_running
+        self.notify.emit(f"{self.instance.name}: {package} had stopped, opening it again", "text")
+        background(lambda: self.emulator.launch(package))
 
     def attach(self, token):
         self.token = token
@@ -171,6 +191,7 @@ class Controller(QObject):
         self.attached.emit()
 
     def ready(self):
+        self.ready_at = time.monotonic()
         self.applied_fps = None
         self.refresh_frame_rate()
         background(self.emulator.keep_awake)
@@ -178,6 +199,8 @@ class Controller(QObject):
             background(lambda: self.emulator.block_ads(True))
         if self.instance.eco:
             background(lambda: self.emulator.set_priority(True))
+        if self.instance.network:
+            background(lambda: self.emulator.set_network(self.instance.network))
         if self.instance.muted:
             background(lambda: self.apply_mute(True))
         files, self.pending = self.pending, []
@@ -460,6 +483,12 @@ class Controller(QObject):
     def apply_mute(self, muted):
         # Runs off the main thread, since it waits on adb
         self.emulator.set_music_muted(muted)
+
+    def set_network(self, profile):
+        self.instance.network = profile
+        self.save()
+        if self.on:
+            background(lambda: self.emulator.set_network(profile))
 
     def set_autostart(self, enabled):
         self.instance.autostart = enabled

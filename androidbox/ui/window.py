@@ -1,5 +1,6 @@
 import ctypes
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -8,8 +9,8 @@ from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
                                QMenu, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
-from .. import (VERSION, browser, claude, emulator, installer, instances, keymap, macros, paths, profiles, relocate,
-                settings, system, updates)
+from .. import (VERSION, browser, claude, diagnostics, emulator, installer, instances, keymap, macros, paths,
+                profiles, relocate, settings, system, updates)
 from ..hotkeys import Hotkeys
 from . import tasks
 from .controller import Controller, plural
@@ -110,6 +111,9 @@ class MainWindow(QMainWindow, ScreenActions):
         self.install_shortcuts()
         self.profile_timer = QTimer(self, interval=3000, timeout=self.watch_profile)
         self.profile_timer.start()
+        self.scheduled = {}
+        self.schedule_timer = QTimer(self, interval=20_000, timeout=self.run_schedule)
+        self.schedule_timer.start()
         self.tray = None
         self.setup_tray()
         self.update_hotkeys()
@@ -895,6 +899,100 @@ class MainWindow(QMainWindow, ScreenActions):
         popout = self.popouts.get(controller.instance.id)
         if popout:
             popout.refresh()
+
+    def run_schedule(self):
+        # Starts and stops instances at the times they were given, once for each time it comes round
+        now = time.localtime()
+        clock, stamp = time.strftime("%H:%M", now), time.strftime("%Y-%m-%d %H:%M", now)
+        for controller in self.controllers.values():
+            instance = controller.instance
+            for kind, at, action, message in (("start", instance.start_at, controller.start, "Started"),
+                                              ("stop", instance.stop_at, controller.stop, "Stopped")):
+                if at == clock and self.scheduled.get((instance.id, kind)) != stamp:
+                    self.scheduled[(instance.id, kind)] = stamp
+                    action()
+                    self.toast(f"{message} {instance.name} on schedule")
+
+    def set_automation(self, controller, **changes):
+        for key, value in changes.items():
+            setattr(controller.instance, key, value)
+        controller.save()
+
+    def set_time(self, controller, key, text):
+        text = text.strip()
+        found = re.fullmatch(r"([01]?\d|2[0-3])[:.]([0-5]\d)", text)
+        if text and not found:
+            self.toast("Use a time like 08:30, in 24-hour form", "bad")
+            self.refresh_settings()
+            return
+        self.set_automation(controller, **{key: f"{int(found[1]):02d}:{found[2]}" if found else ""})
+        self.refresh_settings()
+
+    def save_snapshot(self, controller):
+        if not controller.on:
+            self.toast("Start Android first", "bad")
+            return
+
+        def submit(text):
+            name = emulator.snapshot_name(text)
+            if name in controller.emulator.snapshots():
+                self.toast(f"There is already a state called {name}. Delete it first", "bad")
+                return False
+            self.toast(f"Saving {name}…")
+            self.run(lambda: controller.emulator.save_snapshot(name),
+                     lambda ok: self.snapshot_done(ok, f"Saved the state {name}", "Couldn't save the state"))
+
+        self.ask("Save the current state", "Keeps this instance exactly as it is now: its apps, its data and what's "
+                                           "on screen. Load it later to come back to this moment.",
+                 "Before the next level", "Save", submit)
+
+    def snapshot_done(self, ok, success, failure):
+        self.toast(success if ok else failure, "good" if ok else "bad")
+        self.refresh_settings()
+
+    def load_snapshot(self, controller, name):
+        if not name or not controller.on:
+            self.toast("Start Android first", "bad")
+            return
+
+        def load():
+            self.toast(f"Loading {name}…")
+            self.run(lambda: controller.emulator.load_snapshot(name),
+                     lambda ok: self.snapshot_done(ok, f"Back to {name}", "Couldn't load that state"))
+
+        confirm(self.dialog_parent(), f"Go back to {name}?", "Everything done in this instance since it was saved "
+                "is lost, unless you save the current state first.", "Load it", load)
+
+    def delete_snapshot(self, controller, name):
+        if not name:
+            return
+
+        def remove():
+            if controller.on:
+                return controller.emulator.delete_snapshot(name)
+            # With Android off there is no console to ask, and a saved state is just a folder
+            shutil.rmtree(controller.instance.folder / "snapshots" / name, ignore_errors=True)
+            return True
+
+        confirm(self.dialog_parent(), f"Delete {name}?", "The saved state is removed for good.", "Delete",
+                lambda: self.run(remove, lambda ok: self.snapshot_done(ok, f"Deleted {name}",
+                                                                       "Couldn't delete that state")), danger=True)
+
+    def collect_diagnostics(self, controller):
+        instance = controller.instance
+        file, _ = QFileDialog.getSaveFileName(self, "Save diagnostics",
+                                              str(documents() / f"{instance.name} diagnostics.zip"),
+                                              "Zip files (*.zip)")
+        if not file:
+            return
+        self.toast("Collecting diagnostics…")
+
+        def done(problems):
+            self.toast(f"Saved {Path(file).name}. " + (f"Found {plural(problems, 'known problem')}: open "
+                       "summary.txt first" if problems else "No known problems in the log"), "good")
+
+        self.run(lambda: diagnostics.collect(controller.emulator, file), done,
+                 lambda error: self.toast(f"Couldn't save diagnostics: {error}", "bad"))
 
     def set_hardware(self, controller, **changes):
         for key, value in changes.items():
