@@ -642,6 +642,9 @@ class PhoneView(QWidget):
             return
         if not event.isAutoRepeat() and self.controller.trigger_macro(QKeySequence(event.keyCombination()).toString()):
             return
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier and not event.isAutoRepeat() \
+                and self.controller.clipboard_shortcut(QKeySequence(event.key()).toString()):
+            return
         key = ANDROID_KEYS.get(event.key()) or (event.text() if event.text().isprintable() else "")
         if key:
             self.held[event.key()] = key

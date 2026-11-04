@@ -97,6 +97,7 @@ class Emulator:
         if self.instance.network in instances.NETWORK_PROFILES:
             _, speed, delay = instances.NETWORK_PROFILES[self.instance.network]
             args += ["-netspeed", speed, "-netdelay", delay]
+        self.wait_for_previous_run()
         self.quick_boot = (self.instance.folder / "snapshots" / "default_boot").exists() and not (wipe or fresh)
         self.started = time.monotonic()
         paths.LOGS.mkdir(parents=True, exist_ok=True)
@@ -104,6 +105,20 @@ class Emulator:
         with open(self.instance.log, "w") as log, without_crash_dialogs():
             self.process = subprocess.Popen(args, env=environment(), stdout=log, stderr=subprocess.STDOUT,
                                             creationflags=subprocess.CREATE_NO_WINDOW)
+
+    def wait_for_previous_run(self):
+        # A previous emulator still winding down makes the new one quit with "Running multiple emulators with
+        # the same AVD", so give it a moment, end it if it won't go, and clear the lock a dead one left behind
+        pid = self.qemu_pid()
+        if pid and process_alive(pid):
+            deadline = time.monotonic() + 10
+            while process_alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            if process_alive(pid):
+                run(["taskkill", "/F", "/T", "/PID", str(pid)])
+                time.sleep(1)
+        if not self.locked():
+            shutil.rmtree(self.lock, ignore_errors=True)
 
     def running(self):
         if self.process and self.process.poll() is None:

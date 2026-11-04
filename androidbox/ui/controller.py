@@ -558,6 +558,25 @@ class Controller(QObject):
             bridge = self.bridge
             background(lambda: bridge.set_clipboard(text))
 
+    def clipboard_shortcut(self, key):
+        """Ctrl+V/C/X from the keyboard: Android never sees the control character, so give it the Windows
+        clipboard and ask it to paste, copy or cut by key code"""
+        code = {"V": "KEYCODE_PASTE", "C": "KEYCODE_COPY", "X": "KEYCODE_CUT"}.get(key)
+        if not code or not self.bridge:
+            return False
+        bridge = self.bridge
+        text = QGuiApplication.clipboard().text() if key == "V" else ""
+        if text:
+            self.last_clip = text
+
+        def work():
+            if text:
+                bridge.set_clipboard(text)
+            self.emulator.adb("shell", "input", "keyevent", code, timeout=10)
+
+        background(work)
+        return True
+
     def open_log(self):
         if self.instance.log.exists():
             os.startfile(self.instance.log)
