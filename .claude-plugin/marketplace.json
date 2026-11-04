@@ -1,0 +1,12 @@
+{
+  "name": "androidbox",
+  "owner": { "name": "Wolklaw", "url": "https://github.com/Wolklaw" },
+  "plugins": [
+    {
+      "name": "androidbox",
+      "source": "./plugin",
+      "description": "Drive Androidbox's Android phones from Claude Code: screenshots, taps, typing, APK installs, logcat.",
+      "category": "development"
+    }
+  ]
+}

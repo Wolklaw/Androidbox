@@ -1,0 +1,10 @@
+{
+  "name": "androidbox",
+  "description": "Let Claude Code drive the Android phones that Androidbox runs on your PC: screenshots, taps, typing, APK installs, logcat and more.",
+  "version": "1.0.0",
+  "author": { "name": "Wolklaw", "url": "https://github.com/Wolklaw" },
+  "homepage": "https://github.com/Wolklaw/Androidbox",
+  "repository": "https://github.com/Wolklaw/Androidbox",
+  "license": "MIT",
+  "keywords": ["android", "emulator", "adb", "testing", "mobile"]
+}

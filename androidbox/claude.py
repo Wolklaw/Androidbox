@@ -1,6 +1,10 @@
+import json
+import os
 import shutil
 import subprocess
+import sys
 import threading
+from pathlib import Path
 
 from . import paths
 
@@ -14,8 +18,8 @@ Androidbox's "Let Claude Code control Android" switch is on.
 
 ## As an MCP server (recommended)
 
-Androidbox registers this for you when it finds `claude` on your PATH. If it didn't, register it once, from
-any folder:
+Androidbox registers this for you by adding it to Claude Code's user config (~/.claude.json). Restart Claude
+Code afterwards. To do it by hand instead, from any folder:
 
     claude mcp add --scope user androidbox -- python "{tool}" mcp
 
@@ -43,6 +47,9 @@ stop_app, logcat and adb. Run `/mcp` in Claude Code to check it connected.
 instances from the Androidbox window. Either way, the helper refuses to run while the switch is off.
 """
 
+HOME_LINE = ("# This script lives in the claude folder inside Androidbox's own folder, wherever that has been moved to\n"
+             "HOME =Path(__file__).resolve().parent.parent")
+
 TOOL_TEXT = r'''import base64
 import json
 import os
@@ -54,8 +61,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# This script lives in the claude folder inside Androidbox's own folder, wherever that has been moved to
-HOME = Path(__file__).resolve().parent.parent
+{HOME_LINE}
 ADB = HOME / "sdk" / "platform-tools" / "adb.exe"
 ENVIRONMENT = {**os.environ, "ANDROID_ADB_SERVER_PORT": "{ADB_SERVER_PORT}"}
 CONSOLE_PORTS = {CONSOLE_PORTS}
@@ -328,8 +334,8 @@ TOOLS = [
     {"name": "logcat", "description": "Read the last lines of the device log.",
      "inputSchema": {"type": "object", "properties": {
          **INSTANCE_PROPERTY, "lines": {"type": "integer"}}}},
-    {"name": "adb", "description": "Run a raw adb command against the instance, for anything the other "
-                                   "tools don't cover.",
+    {"name": "adb", "description": "Last resort: a raw adb command against the instance, for what the other "
+                                   "tools don't cover. Already pointed at Androidbox's adb server.",
      "inputSchema": {"type": "object", "required": ["args"], "properties": {
          **INSTANCE_PROPERTY, "args": {"type": "array", "items": {"type": "string"}}}}},
 ]
@@ -340,6 +346,14 @@ DISPATCH = {
     "install_apk": tool_install_apk, "launch_app": tool_launch_app, "stop_app": tool_stop_app,
     "logcat": tool_logcat, "adb": tool_adb,
 }
+
+
+INSTRUCTIONS = ("These tools drive the Android phones that Androidbox runs on this PC. Use them instead of running adb "
+                "yourself: Androidbox keeps its own adb server on port {ADB_SERVER_PORT}, so a plain `adb devices` "
+                "shows none of its instances. Start with list_instances, then read_screen (text and tap targets) "
+                "before falling back to screenshot, and use tap_text, wait_for_text and install_apk/launch_app "
+                "rather than guessing coordinates or shelling out. The adb tool is only for what the others don't "
+                "cover. If an instance is off, ask the user to start it from the Androidbox window.")
 
 
 def respond(id_, result):
@@ -360,7 +374,8 @@ def mcp_server():
         params = request.get("params") or {}
         if method == "initialize":
             respond(id_, {"protocolVersion": params.get("protocolVersion", "2024-11-05"),
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "androidbox", "version": "1.0"}})
+                          "capabilities": {"tools": {}}, "serverInfo": {"name": "androidbox", "version": "1.0"},
+                          "instructions": INSTRUCTIONS})
         elif method == "tools/list":
             respond(id_, {"tools": TOOLS})
         elif method == "tools/call":
@@ -454,7 +469,8 @@ def enable():
     from . import emulator, instances
     FOLDER.mkdir(parents=True, exist_ok=True)
     TOOL.write_text(TOOL_TEXT.replace("{CONSOLE_PORTS}", repr(list(instances.CONSOLE_PORTS)))
-                    .replace("{ADB_SERVER_PORT}", emulator.ADB_SERVER_PORT), encoding="utf-8")
+                    .replace("{ADB_SERVER_PORT}", emulator.ADB_SERVER_PORT)
+                    .replace("{HOME_LINE}", HOME_LINE), encoding="utf-8")
     GUIDE.write_text(GUIDE_TEXT.format(tool=TOOL), encoding="utf-8")
     threading.Thread(target=register, daemon=True).start()
 
@@ -462,6 +478,53 @@ def enable():
 def disable():
     shutil.rmtree(FOLDER, ignore_errors=True)
     threading.Thread(target=unregister, daemon=True).start()
+
+
+CONFIG = Path.home() / ".claude.json"
+DESKTOP_CONFIG = Path(os.environ.get("APPDATA", str(Path.home()))) / "Claude" / "claude_desktop_config.json"
+SKILL = Path.home() / ".claude" / "skills" / "androidbox" / "SKILL.md"
+SKILL_TEXT = """---
+name: androidbox
+description: Use for anything on an Android phone, emulator or app on this PC - testing or debugging an app, taking screenshots, tapping, typing, installing an APK, reading logcat. Androidbox runs the phones; use its MCP tools, not raw adb.
+---
+
+Androidbox runs Android instances on this PC with a private adb server (port {port}), so plain `adb devices`
+shows nothing. Use the `androidbox` MCP tools (mcp__androidbox__*): list_instances, read_screen, screenshot,
+tap_text, tap, swipe, type_text, key, wait_for_text, install_apk, launch_app, stop_app, logcat, screen_record.
+Prefer read_screen over screenshot, and tap_text over tapping coordinates. If the tools are missing, check
+`/mcp`; if the user's instance is off, ask them to start it from the Androidbox window. From a shell, the same
+helper works: `python "{tool}" list`.
+"""
+
+
+def python_command():
+    """A python that can run the helper: the one Androidbox runs on from source, else whatever is on PATH.
+    A bare `python` is no good, it can be the Microsoft Store stub that opens a store page instead of running."""
+    if not getattr(sys, "frozen", False):
+        console = Path(sys.executable).with_name("python.exe")
+        return str(console if console.exists() else sys.executable)
+    for name in ("python", "py"):
+        found = shutil.which(name)
+        if found and "WindowsApps" not in found:
+            return found
+    return "python"
+
+
+def edit_config(change, path=None):
+    """Claude Code keeps user-scope MCP servers in ~/.claude.json. Editing it directly is the fallback for when
+    the `claude` command isn't on PATH, as with the desktop app, so registration doesn't depend on it."""
+    try:
+        path = path or CONFIG
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        servers = data.setdefault("mcpServers", {})
+        change(servers)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".androidbox.tmp")
+        temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary.replace(path)
+        return True
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def mcp_command(*arguments):
@@ -478,9 +541,31 @@ def mcp_command(*arguments):
 
 
 def register():
-    mcp_command("remove", "--scope", "user", "androidbox")
-    return mcp_command("add", "--scope", "user", "androidbox", "--", "python", str(TOOL), "mcp")
+    entry = {"type": "stdio", "command": python_command(), "args": [str(TOOL), "mcp"], "env": {}}
+    # Written either way, so it lands even when the claude command is missing or fails
+    done = edit_config(lambda servers: servers.__setitem__("androidbox", entry))
+    if DESKTOP_CONFIG.parent.exists():
+        edit_config(lambda servers: servers.__setitem__("androidbox", {k: v for k, v in entry.items() if k != "type"}),
+                    DESKTOP_CONFIG)
+    try:
+        SKILL.parent.mkdir(parents=True, exist_ok=True)
+        from . import emulator
+        SKILL.write_text(SKILL_TEXT.format(port=emulator.ADB_SERVER_PORT, tool=TOOL), encoding="utf-8")
+    except OSError:
+        pass
+    return done or (mcp_command("remove", "--scope", "user", "androidbox")
+                    and mcp_command("add", "--scope", "user", "androidbox", "--", python_command(), str(TOOL), "mcp"))
+
+
+def registered():
+    try:
+        return "androidbox" in json.loads(CONFIG.read_text(encoding="utf-8")).get("mcpServers", {})
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def unregister():
+    edit_config(lambda servers: servers.pop("androidbox", None), DESKTOP_CONFIG) if DESKTOP_CONFIG.exists() else None
+    shutil.rmtree(SKILL.parent, ignore_errors=True)
+    edit_config(lambda servers: servers.pop("androidbox", None))
     return mcp_command("remove", "--scope", "user", "androidbox")
