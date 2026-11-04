@@ -843,7 +843,12 @@ class InstancesPage(Page):
                               (default_storage or "The same folder as Androidbox itself") +
                               "\nWhere a new instance's files go unless you pick somewhere else while creating it. "
                               "Good for keeping big games off a small system drive.",
-                              row(choose_storage, default_storage_default))))
+                              row(choose_storage, default_storage_default)), divider(),
+                      setting("Download mirrors",
+                              (f"{len(host.prefs['mirrors'])} added" if host.prefs["mirrors"] else "Google only") +
+                              "\nOther sources for Android images and tools when Google's servers are slow or "
+                              "blocked. Downloads are still verified against their checksums.",
+                              button("Edit…", lambda: host.edit_mirrors(self.refresh), kind="secondary"))))
 
         shortcuts = [("F11", "Full screen"), ("Ctrl+Shift+S", "Screenshot"), ("Ctrl+Shift+R", "Record the screen"),
                      ("Ctrl+Shift+K", "Game controls on or off"), ("Ctrl+Shift+E", "Edit game controls"),
@@ -1095,11 +1100,14 @@ class SetupPage(QWidget):
         self.action.setEnabled(False)
         self.legal = button("Android SDK License", self.show_license, kind="link")
         self.legal.hide()
+        self.mirrors = button("Slow or blocked? Use a mirror", lambda: self.host.edit_mirrors(self.retry),
+                              kind="link")
         for widget in (self.title, self.text, self.detail, self.bar):
             inner.addWidget(widget)
         inner.addSpacing(8)
         inner.addWidget(self.action)
         inner.addWidget(self.legal, alignment=Qt.AlignmentFlag.AlignHCenter)
+        inner.addWidget(self.mirrors, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def begin(self, error=None):
         self.bar.hide()
@@ -1139,6 +1147,7 @@ class SetupPage(QWidget):
         self.title.setText("Installing Android")
         self.action.hide()
         self.legal.hide()
+        self.mirrors.hide()
         self.bar.show()
         self.detail.setStyleSheet("")
         last = [0.0]
@@ -1165,6 +1174,7 @@ class SetupPage(QWidget):
     def failed(self, error):
         self.title.setText("Welcome to Androidbox")
         self.action.show()
+        self.mirrors.show()
         self.begin(f"Setup stopped: {error}")
 
 

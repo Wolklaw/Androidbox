@@ -10,7 +10,8 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow,
-                               QMenu, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
+                               QMenu, QPlainTextEdit, QScrollArea, QStackedWidget, QSystemTrayIcon, QVBoxLayout,
+                               QWidget)
 
 from .. import (VERSION, browser, claude, diagnostics, emulator, installer, instances, keymap, macros, paths,
                 profiles, relocate, settings, system, updates)
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow, ScreenActions):
         self.setMinimumSize(980, 660)
         profiles.start()
         self.prefs = settings.load()
+        installer.set_mirrors(self.prefs["mirrors"])
         if self.prefs["claude_access"]:
             claude.enable()
         self.instances = instances.load()
@@ -443,6 +445,8 @@ class MainWindow(QMainWindow, ScreenActions):
     def set_pref(self, key, value):
         self.prefs[key] = value
         settings.save(self.prefs, key)
+        if key == "mirrors":
+            installer.set_mirrors(value)
         if key == "claude_access":
             claude.enable() if value else claude.disable()
         if key == "sync_input":
@@ -1203,6 +1207,33 @@ class MainWindow(QMainWindow, ScreenActions):
         modal.open()
         field.setFocus()
         field.selectAll()
+
+    def edit_mirrors(self, then=None):
+        modal = Modal(self.dialog_parent(), "Download mirrors",
+                      "Other places to get Android from when Google's servers are slow or blocked, one web address "
+                      "per line. They're tried in order after Google. Downloads are still checked against the "
+                      "checksums in the package list, whichever source they came from. Example: "
+                      "https://mirrors.cloud.tencent.com/AndroidSDK/")
+        field = QPlainTextEdit("\n".join(self.prefs["mirrors"]))
+        field.setPlaceholderText("https://mirrors.cloud.tencent.com/AndroidSDK/")
+        field.setMinimumHeight(110)
+        modal.add(field)
+        modal.cancel()
+
+        def save():
+            lines = [line.strip() for line in field.toPlainText().splitlines() if line.strip()]
+            valid = [mirror for mirror in map(installer.normalize_mirror, lines) if mirror]
+            if len(valid) < len(lines):
+                self.toast("Skipped lines that aren't web addresses starting with http:// or https://", "bad")
+            self.set_pref("mirrors", valid)
+            self.toast(f"Using {len(valid)} mirror{'s' if len(valid) != 1 else ''} after Google" if valid
+                       else "Downloading from Google only", "good")
+            if then:
+                then()
+
+        modal.action("Save", save)
+        modal.open()
+        field.setFocus()
 
     def show_profile_name(self):
         name = profiles.active()

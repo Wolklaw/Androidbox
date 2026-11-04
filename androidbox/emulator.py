@@ -231,13 +231,48 @@ class Emulator:
                 self.adb("push", str(obb), target, timeout=1800)
         return True, ""
 
-    def push(self, file):
+    def remote_size(self, target):
+        quoted = target.replace("'", "'\\''")
+        code, output = self.adb("shell", f"stat -c %s '{quoted}'", timeout=10)
+        return int(output) if code == 0 and output.strip().isdigit() else None
+
+    def push_once(self, file, target, progress):
+        """One attempt at copying a file in. Reports how far along it is by watching the file grow on the device"""
+        size = Path(file).stat().st_size
+        process = subprocess.Popen([str(paths.ADB), "-s", self.instance.serial, "push", str(file), target],
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment(),
+                                   creationflags=subprocess.CREATE_NO_WINDOW, encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + max(600, size / 2e6)
+        while process.poll() is None:
+            if time.monotonic() > deadline:
+                process.kill()
+                return False, "The copy took too long and was stopped"
+            if progress and size:
+                done = self.remote_size(target)
+                if done is not None:
+                    progress(min(done, size), size)
+            time.sleep(0.7)
+        output = process.stdout.read().strip()
+        if process.returncode:
+            return False, last_line(output)
+        # adb can report success for a copy that stopped short, so the size on the device has to match
+        if size and self.remote_size(target) != size:
+            return False, "The file arrived incomplete"
+        return True, ""
+
+    def push(self, file, progress=None, attempts=3):
         target = f"/sdcard/Download/{Path(file).name}"
-        code, output = self.adb("push", str(file), target, timeout=1800)
-        if code == 0:
-            quoted = target.replace("'", "'\\''")
-            self.adb("shell", f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://{quoted}'")
-        return code == 0, last_line(output)
+        reason = ""
+        for attempt in range(attempts):
+            if attempt:
+                self.adb("wait-for-device", timeout=30)
+                time.sleep(2)
+            ok, reason = self.push_once(file, target, progress)
+            if ok:
+                quoted = target.replace("'", "'\\''")
+                self.adb("shell", f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://{quoted}'")
+                return True, ""
+        return False, reason
 
     def block_ads(self, enabled):
         if enabled:

@@ -10,6 +10,8 @@ from . import paths
 
 REPOSITORY = "https://dl.google.com/android/repository/"
 STABLE = "channel-0"
+# Extra download sources the user added, for places where Google's servers are slow or blocked
+MIRRORS = []
 
 IMAGE_TAG = "google_apis_playstore"
 IMAGE_ABI = "x86_64"
@@ -101,9 +103,41 @@ def install(packages, progress, force=False):
     shutil.rmtree(paths.DOWNLOADS, ignore_errors=True)
 
 
+def normalize_mirror(text):
+    """A mirror's address in the form used here, or None if it isn't a web address"""
+    text = text.strip()
+    return text.rstrip("/") + "/" if text.lower().startswith(("http://", "https://")) and len(text) > 8 else None
+
+
+def set_mirrors(addresses):
+    """Alternative places to get the Android packages from, tried in order after Google's own servers"""
+    MIRRORS[:] = [mirror for mirror in map(normalize_mirror, addresses) if mirror]
+
+
+def candidates(url):
+    """Every address a Google repository file may be fetched from: Google's own, then each mirror.
+
+    A mirror either copies Google's folder layout or puts every file in one flat folder, so both are tried."""
+    if not url.startswith(REPOSITORY):
+        return [url]
+    relative = url[len(REPOSITORY):]
+    found = [url]
+    for mirror in MIRRORS:
+        for option in (mirror + relative, mirror + relative.rsplit("/", 1)[-1]):
+            if option not in found:
+                found.append(option)
+    return found
+
+
 def fetch_xml(url):
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return ET.fromstring(response.read())
+    error = None
+    for address in candidates(url):
+        try:
+            with urllib.request.urlopen(address, timeout=30) as response:
+                return ET.fromstring(response.read())
+        except (OSError, ET.ParseError) as problem:
+            error = error or problem
+    raise error
 
 
 def local(element):
@@ -151,6 +185,19 @@ def runs_on_windows(archive):
     return (host is None or host.text == "windows") and (arch is None or arch.text == "x64")
 
 
+def fetch(address, partial, have, package, progress):
+    headers = {"Range": f"bytes={have}-"} if have else {}
+    with urllib.request.urlopen(urllib.request.Request(address, headers=headers), timeout=60) as response:
+        if have and response.status != 206:
+            have = 0
+        with open(partial, "ab" if have else "wb") as file:
+            while chunk := response.read(1 << 20):
+                file.write(chunk)
+                have += len(chunk)
+                progress(package, have, package.size, "download")
+    return have
+
+
 def download(package, progress):
     final = paths.DOWNLOADS / Path(package.url).name
     if final.exists():
@@ -158,16 +205,18 @@ def download(package, progress):
     partial = final.with_suffix(".part")
     have = partial.stat().st_size if partial.exists() else 0
 
-    if have < package.size:
-        headers = {"Range": f"bytes={have}-"} if have else {}
-        with urllib.request.urlopen(urllib.request.Request(package.url, headers=headers), timeout=60) as response:
-            if have and response.status != 206:
-                have = 0
-            with open(partial, "ab" if have else "wb") as file:
-                while chunk := response.read(1 << 20):
-                    file.write(chunk)
-                    have += len(chunk)
-                    progress(package, have, package.size, "download")
+    error = None
+    for address in candidates(package.url) if have < package.size else []:
+        try:
+            have = fetch(address, partial, have, package, progress)
+            error = None
+            break
+        except OSError as problem:
+            # Whatever arrived is kept, so the next source carries on from there
+            error = error or problem
+            have = partial.stat().st_size if partial.exists() else 0
+    if error:
+        raise error
 
     progress(package, package.size, package.size, "verify")
     digest = hashlib.sha1()

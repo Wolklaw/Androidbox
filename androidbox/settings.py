@@ -14,6 +14,7 @@ LOCAL = {
     "compact_tools": False,
     "inspector": True,
     "default_storage_path": "",
+    "mirrors": [],
 }
 
 PROFILE = {

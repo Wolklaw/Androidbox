@@ -307,11 +307,17 @@ class Controller(QObject):
 
         def work():
             results = []
-            for file in files:
+            for index, file in enumerate(files, 1):
+                name = Path(file).name
+                prefix = f"({index}/{len(files)}) " if len(files) > 1 else ""
                 if emulator.is_app_package(file):
+                    self.notify.emit(f"{prefix}Installing {name}…", "text")
                     ok, reason = self.emulator.install(file)
                 else:
-                    ok, reason = self.emulator.push(file)
+                    def report(done, total, name=name, prefix=prefix):
+                        self.notify.emit(f"{prefix}Copying {name} · {done * 100 // total}%", "text")
+
+                    ok, reason = self.emulator.push(file, report)
                 results.append((Path(file).name, emulator.is_app_package(file), ok, reason))
             return results
 

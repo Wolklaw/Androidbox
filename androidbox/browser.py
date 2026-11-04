@@ -38,10 +38,14 @@ def download(progress):
                 file.write(chunk)
                 done += len(chunk)
                 progress("download", done, total)
-    with zipfile.ZipFile(partial) as apk:
-        if "AndroidManifest.xml" not in apk.namelist():
-            partial.unlink()
-            raise RuntimeError("The Firefox download was damaged. Try again.")
+    try:
+        with zipfile.ZipFile(partial) as apk:
+            intact = "AndroidManifest.xml" in apk.namelist()
+    except zipfile.BadZipFile:
+        intact = False
+    if not intact:
+        partial.unlink()
+        raise RuntimeError("The Firefox download was damaged. Try again.")
     partial.rename(target)
     return target
 
