@@ -53,6 +53,17 @@ def without_crash_dialogs():
         kernel32.SetErrorMode(previous)
 
 
+def exclude_from_error_reporting():
+    # The emulator installs its own crash handler, which can undo the error mode above, so also tell Windows
+    # not to show its error dialog for qemu (per user, no admin needed)
+    try:
+        wer = ctypes.windll.wer
+        for name in ("qemu-system-x86_64-headless.exe", "qemu-system-x86_64.exe"):
+            wer.WerAddExcludedApplication(name, False)
+    except (OSError, AttributeError):
+        pass
+
+
 def hardware_acceleration():
     code, output = run([str(paths.EMULATOR), "-accel-check"])
     lines = output.splitlines()
@@ -89,6 +100,7 @@ class Emulator:
         self.quick_boot = (self.instance.folder / "snapshots" / "default_boot").exists() and not (wipe or fresh)
         self.started = time.monotonic()
         paths.LOGS.mkdir(parents=True, exist_ok=True)
+        exclude_from_error_reporting()
         with open(self.instance.log, "w") as log, without_crash_dialogs():
             self.process = subprocess.Popen(args, env=environment(), stdout=log, stderr=subprocess.STDOUT,
                                             creationflags=subprocess.CREATE_NO_WINDOW)
@@ -144,16 +156,36 @@ class Emulator:
         return max(found)[1] if found else None
 
     def stop(self):
+        since = self.log_size()
         try:
             self.console("kill")
         except OSError:
             pass
         deadline = time.monotonic() + 40
         while not self.fully_stopped() and time.monotonic() < deadline:
-            time.sleep(0.5)
+            # The emulator's graphics teardown can crash after the state is already saved, so once the
+            # snapshot is on disk there is nothing left worth waiting for
+            if self.snapshot_saved(since):
+                break
+            time.sleep(0.1)
         if not self.fully_stopped():
             self.force_stop()
         self.process = None
+
+    def log_size(self):
+        try:
+            return self.instance.log.stat().st_size
+        except OSError:
+            return 0
+
+    def snapshot_saved(self, since):
+        """Whether the emulator has logged finishing a snapshot save after the given point in its log"""
+        try:
+            with open(self.instance.log, "rb") as log:
+                log.seek(since)
+                return re.search(rb"Saving snapshot .* took ", log.read()) is not None
+        except OSError:
+            return False
 
     def force_stop(self):
         pids = [self.process.pid] if self.process else []
