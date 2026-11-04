@@ -35,7 +35,7 @@
 
 Androidbox runs **Google's official Android Emulator**, the same engine inside Android Studio, on your
 graphics card, and shows Android in one clean window. There are no ads, no accounts to create, no
-bundled apps and no telemetry. Everything it needs downloads straight from Google, and everything it
+bundled apps and no telemetry. Everything it needs downloads from Google, or from a mirror you choose, and everything it
 stores stays in one folder you can delete.
 
 > Nothing to install beyond what Google ships, nothing bundled, and because it can't be rooted, banking
@@ -194,9 +194,10 @@ how an app or game copes with a poor signal. It applies straight away, with no r
 
 Androidbox checks GitHub for a newer release when it starts and every few hours while it runs. When one
 is out, it downloads the installer in the background and checks it against the checksum GitHub published
-for it. It then asks whether to restart and install: Androidbox saves your Androids first, Windows asks
-for permission if it's installed in `Program Files`, and Androidbox opens again afterwards. It never
-restarts on its own. Turn the checks or the automatic download off on the **All instances** page, where
+for it, so by the time it asks, the update is already on your PC. Choosing **Restart and update** shows
+what it's doing at once: Androidbox saves your Androids, installs, and opens again afterwards. Windows
+asks for permission if it's installed in `Program Files`. If a shutdown ever stalls, Androidbox ends
+itself and carries on with the install rather than hang. It never restarts on its own. Turn the checks or the automatic download off on the **All instances** page, where
 **Look for an update now** also checks on demand.
 
 Every push to `main` that raises the version publishes a new release, which is how an update gets to
@@ -213,6 +214,17 @@ you.
 - **Mute** one instance, and **keep Androidbox on top** of other windows.
 
 <p align="center"><img src="docs/instances.png" alt="The instance manager" width="820"></p>
+
+### Download mirrors
+
+If Google's servers are slow or blocked where you live, add a mirror and Androidbox downloads from it
+instead. Add one on the first-run screen with **Slow or blocked? Use a mirror**, or any time under
+**Download mirrors** on the **All instances** page, one web address per line, for example
+`https://mirrors.cloud.tencent.com/AndroidSDK/`. Mirrors are tried in order after Google, for both the
+package list and the downloads, and a download that stops partway carries on from a different source.
+Every package is still checked against its SHA-1 checksum, whichever source it came from.
+
+<p align="center"><img src="docs/setup.png" alt="The first-run screen, with a link to use a download mirror" width="420"></p>
 
 ### No ads, two ways
 
@@ -236,7 +248,9 @@ helper is deleted, and it refuses to run either way while the switch is off.
 
 - Screenshots, and screen recording with no time limit (saved in 3-minute parts)
 - Drag and drop to install `.apk`, `.apks` and `.xapk` files, game data included
-- File import and export: add files to Android, or browse its storage and save files and folders to your PC
+- File import and export: add files to Android with a percentage while they copy, an automatic retry if a
+  copy fails, and a check that the whole file arrived, or browse its storage and save files and folders to
+  your PC
 - A clipboard shared with Windows
 - Your webcam as Android's camera
 - Rotate, shake, volume and GPS location
@@ -245,7 +259,7 @@ helper is deleted, and it refuses to run either way while the switch is off.
 - **Diagnostics**: one button saves Android's log, an instance's settings and a plain summary of anything
   that looks wrong, such as an ARM translator crash, to a zip you can attach to a bug report
 - Move everything Androidbox stores to another drive when your C: drive runs short
-- Automatic updates, with a check for new releases that you can turn off
+- Automatic updates that download in the background, with a check for new releases that you can turn off
 
 <p align="center"><img src="docs/settings.png" alt="Per-instance settings" width="820"></p>
 
@@ -255,7 +269,7 @@ helper is deleted, and it refuses to run either way while the switch is off.
   <img src="docs/how-it-works.png" alt="The Androidbox window gets screen frames from the Android Emulator through shared memory. It sends touch, keys and sensors over gRPC, installs and settings over adb, and recording and shutdown over the emulator console. On the first run, the emulator is downloaded from dl.google.com." width="520">
 </p>
 
-1. **First run.** Androidbox reads Google's SDK package index, downloads the emulator, adb and the
+1. **First run.** Androidbox reads Google's SDK package index (or a mirror's, if you added one), downloads the emulator, adb and the
    Android 16 system image (about 1.9 GB), checks every file's checksum, and unpacks them into
    `%LOCALAPPDATA%\Androidbox`. The Android 11 image (about 1.4 GB) only downloads the first time you
    start an instance that uses it.
@@ -368,6 +382,16 @@ again. If you turned on sync, a copy of your profiles also sits in the folder yo
 </details>
 
 <details>
+<summary><b>Google's servers are slow or blocked for me. Can I download from somewhere else?</b></summary>
+
+Yes. Choose **Slow or blocked? Use a mirror** on the first-run screen, or **Download mirrors** on the
+**All instances** page, and add a mirror's address, such as `https://mirrors.cloud.tencent.com/AndroidSDK/`.
+Androidbox still checks every download against its SHA-1 checksum. If Google can't be reached at all, the
+checksums come from the mirror's own package list, so only use a mirror you trust.
+
+</details>
+
+<details>
 <summary><b>Can I run it without Google Play?</b></summary>
 
 Yes. Skip signing in and install apps from `.apk` files.
@@ -427,7 +451,8 @@ python -m venv .venv
 <details>
 <summary><b>What's in the source</b></summary>
 
-- `androidbox/installer.py`: downloads and verifies the emulator, adb and the system image
+- `androidbox/installer.py`: downloads and verifies the emulator, adb and the system image, from Google
+  or your mirrors
 - `androidbox/instances.py`: instances, ports, virtual hardware, backup and restore
 - `androidbox/emulator.py`: starts and stops the emulator, adb and console commands
 - `androidbox/bridge.py`: the gRPC link, with the screen stream, touch and key input, and sensors
