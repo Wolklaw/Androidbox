@@ -236,13 +236,20 @@ Every package is still checked against its SHA-1 checksum, whichever source it c
 
 Off by default. Turn on **Let Claude Code control Android** in Settings and Androidbox writes a helper
 to `%LOCALAPPDATA%\Androidbox\claude` and, if Claude Code is installed, registers it as an MCP server
-for you (turning the switch off removes it again). If it isn't found, the `README.md` in that folder shows
-the `claude mcp add ...` command to run yourself. Claude Code then gets tools for your running
+for you (turning the switch off removes it again). Registration edits Claude Code's own config, so it works
+even when the `claude` command isn't on your PATH; restart Claude Code afterwards. The `README.md` in that
+folder also shows the `claude mcp add ...` command if you'd rather do it by hand. Claude Code then gets tools for your running
 instances: screenshots returned inline, reading what's on screen or its full accessibility tree, waiting
 for text to appear or go away, tapping, swiping, typing, installing and launching apps, recording the
 screen, and reading logs. The same folder also has a plain command-line version of the same
 features, for scripting or when you'd rather not register an MCP server. Turn the switch off and the
 helper is deleted, and it refuses to run either way while the switch is off.
+
+Prefer a plugin? This repo is also a Claude Code marketplace. In Claude Code run
+`/plugin marketplace add Wolklaw/Androidbox`, then `/plugin install androidbox@androidbox`. It ships the same
+tools plus a skill that points Claude at them instead of raw `adb`, which can't see Androidbox's phones. You
+still need Androidbox installed with the switch on, and Python on your PATH. With the plugin installed,
+Androidbox stops registering its own copy.
 
 ### Everything else
 
@@ -466,6 +473,7 @@ python -m venv .venv
 - `androidbox/ui/palette.py`, `inspector.py`: the Ctrl+K search and the panel beside the screen
 - `tools/ui_shots.py`: renders every page to PNG files, off-screen, to check a change to the UI by eye
 - `androidbox/claude.py`: the Claude Code helper, as an MCP server and a command line
+- `plugin/`: the Claude Code plugin, rendered from `claude.py` by `tools/build_plugin.py`
 - `androidbox/updates.py`: asks GitHub for the newest release, then downloads and verifies its installer
 - `androidbox/ui/`: the windows. `window.py`, `popout.py` and `host.py` lay them out, `phone.py` draws
   Android, and `files.py` browses Android's storage

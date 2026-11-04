@@ -540,7 +540,18 @@ def mcp_command(*arguments):
         return False
 
 
+def plugin_installed():
+    """The Androidbox plugin brings its own server and skill, so registering ours as well would double them."""
+    try:
+        return "androidbox@" in (Path.home() / ".claude" / "plugins" / "installed_plugins.json").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
 def register():
+    if plugin_installed():
+        unregister()
+        return True
     entry = {"type": "stdio", "command": python_command(), "args": [str(TOOL), "mcp"], "env": {}}
     # Written either way, so it lands even when the claude command is missing or fails
     done = edit_config(lambda servers: servers.__setitem__("androidbox", entry))
