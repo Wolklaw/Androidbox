@@ -53,6 +53,30 @@ def without_crash_dialogs():
         kernel32.SetErrorMode(previous)
 
 
+def close_crash_dialogs():
+    """Closes any Windows crash box that a qemu process has left on screen. Windows shows one for a fail fast
+    crash whatever the error mode says, and the process stays frozen behind it until somebody clicks OK"""
+    user32 = ctypes.windll.user32
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_size_t]
+    user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+    user32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+    found = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def visit(window, _):
+        if user32.IsWindowVisible(window):
+            title = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(window, title, 256)
+            if title.value.lower().startswith("qemu-system"):
+                found.append(window)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    for window in found:
+        user32.PostMessageW(window, 0x0010, 0, 0)  # WM_CLOSE
+    return bool(found)
+
+
 def exclude_from_error_reporting():
     # The emulator installs its own crash handler, which can undo the error mode above, so also tell Windows
     # not to show its error dialog for qemu (per user, no admin needed)
@@ -182,6 +206,7 @@ class Emulator:
             # snapshot is on disk there is nothing left worth waiting for
             if self.snapshot_saved(since):
                 break
+            close_crash_dialogs()
             time.sleep(0.1)
         if not self.fully_stopped():
             self.force_stop()
