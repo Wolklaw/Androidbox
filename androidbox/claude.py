@@ -548,7 +548,16 @@ def plugin_installed():
         return False
 
 
+def forget_old_name():
+    """1.9.0 and 1.9.1 registered themselves as `droidcore`; drop that so the tools aren't doubled."""
+    edit_config(lambda servers: servers.pop("droidcore", None))
+    if DESKTOP_CONFIG.exists():
+        edit_config(lambda servers: servers.pop("droidcore", None), DESKTOP_CONFIG)
+    shutil.rmtree(Path.home() / ".claude" / "skills" / "droidcore", ignore_errors=True)
+
+
 def register():
+    forget_old_name()
     if plugin_installed():
         unregister()
         return True

@@ -36,7 +36,7 @@ Compression=lzma2/max
 SolidCompression=yes
 OutputDir=dist
 OutputBaseFilename=Androidbox-Setup-{#AppVersion}
-AppMutex=Local\Androidbox
+AppMutex=Local\Androidbox,Local\DroidCore
 CloseApplications=yes
 
 [Languages]
@@ -58,6 +58,12 @@ Name: "hypervisor"; Description: "Turn on Windows Hypervisor Platform (Android c
 
 [Files]
 Source: "dist\Androidbox\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Left over from the two releases that were called DroidCore
+Type: files; Name: "{app}\DroidCore.exe"
+Type: files; Name: "{autoprograms}\DroidCore.lnk"
+Type: files; Name: "{autodesktop}\DroidCore.lnk"
 
 [Icons]
 Name: "{autoprograms}\Androidbox"; Filename: "{app}\Androidbox.exe"

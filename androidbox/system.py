@@ -10,6 +10,7 @@ from . import paths
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = "Androidbox"
+OLD_RUN_NAME = "DroidCore"
 RESERVED_MEMORY = 4096
 
 
@@ -108,7 +109,13 @@ def command(*arguments):
 def starts_with_windows():
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            winreg.QueryValueEx(key, RUN_NAME)
+            try:
+                winreg.QueryValueEx(key, RUN_NAME)
+                return True
+            except FileNotFoundError:
+                winreg.QueryValueEx(key, OLD_RUN_NAME)
+        # Set up under the DroidCore name: move it back to this one
+        start_with_windows(True)
         return True
     except OSError:
         return False
@@ -118,9 +125,9 @@ def start_with_windows(enabled):
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
             winreg.SetValueEx(key, RUN_NAME, 0, winreg.REG_SZ, command("--background"))
-        else:
+        for name in ((OLD_RUN_NAME,) if enabled else (RUN_NAME, OLD_RUN_NAME)):
             try:
-                winreg.DeleteValue(key, RUN_NAME)
+                winreg.DeleteValue(key, name)
             except FileNotFoundError:
                 pass
 

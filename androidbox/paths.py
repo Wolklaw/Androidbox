@@ -5,6 +5,14 @@ from pathlib import Path
 
 LOCAL = Path(os.environ["LOCALAPPDATA"])
 DEFAULT_HOME = LOCAL / "Androidbox"
+# 1.9.0 and 1.9.1 were briefly released as DroidCore. Their folder is renamed back in place (instant on one
+# drive), so nothing downloaded or created under that name is lost. If it is locked, it keeps being used
+_RENAMED_HOME = LOCAL / "DroidCore"
+if not DEFAULT_HOME.exists() and _RENAMED_HOME.is_dir():
+    try:
+        _RENAMED_HOME.rename(DEFAULT_HOME)
+    except OSError:
+        DEFAULT_HOME = _RENAMED_HOME
 # The folder Androidbox keeps its files in can be moved to another drive. Where it went is written here,
 # and this one file always stays in the default folder
 LOCATION = DEFAULT_HOME / "location.txt"

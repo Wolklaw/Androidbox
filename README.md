@@ -416,6 +416,29 @@ that allow it.
 </details>
 
 <details>
+<summary><b>Clash of Clans (or another game) closes right after it starts</b></summary>
+
+Some games, Clash of Clans among them, check at startup whether they are running on an emulator and
+quit straight away if they are. You see the game open and close within a second, and the log shows the
+game's own code exiting, not a crash in Android. Androidbox can't fix that, and it doesn't try to hide
+the emulator from a game: that would mean getting around the game's own protection and its terms of
+service. Other games that do the same include Pokémon GO. Try the game on a real phone, or on Google Play
+Games on PC if the publisher supports it.
+
+</details>
+
+<details>
+<summary><b>I have an app called DroidCore, and it never offers me an update</b></summary>
+
+DroidCore 1.9.0 and 1.9.1 were Androidbox under a short-lived name. Those copies only look for versions
+above 1.9.1, so they missed everything released after the name went back. Download the newest
+[Androidbox installer](https://github.com/Wolklaw/Androidbox/releases/latest) and run it once. It replaces
+DroidCore in place, moves your instances, profiles and Android images back to the Androidbox folder, and
+brings over the start-with-Windows setting and the Claude Code registration. Updates arrive on their own after that.
+
+</details>
+
+<details>
 <summary><b>Why Android 16, and not the newest Android?</b></summary>
 
 Google publishes Play Store images for new versions long before they are stable enough for games.
